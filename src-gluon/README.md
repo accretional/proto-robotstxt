@@ -27,9 +27,12 @@ robots.txt bytes ──Normalize──▶ ParseCSTWithOptions(+token matchers)
 | `parse.go` | grammar loading (`Default`/`LoadGrammar`), input `Normalize`, `Parse` → CST |
 | `matchers.go` | token matchers for the grammar's lexical atoms (the ABNF character classes, case-insensitive keys, newlines — everything ISO 14977 can't express) |
 | `events.go` | the **compiler to google's deserialized format**: CST → `[]Event`, byte-exact against src-google/robots.cc's `RobotsParseHandler` callback stream (key classification via prefix+typos, `MaybeEscapePattern` port, robots.cc line numbering) |
+| `metadata.go` | the google-exact **line scanner**: BOM/CRLF/EOF-flush split, `kMaxLineLen` truncation, per-line `LineMetadata` (ReportLineMetadata mirror), GetKeyAndValueFrom + GetKeyType ports |
+| `recover.go` | **tier 2** (docs/design/malformed-input.md): per-line StartRule re-parse with robots.cc fallback; `Recover` is total — any bytes → events + metadata + per-line records |
 | `rep.go` | CST → typed rep message (`robotstxt.rep.Robotstxt`); schema derived from the grammar at runtime, instantiated with dynamicpb |
-| `genproto.go` | grammar → proto schema (`Genproto`), the kvq/proto-sqlite pipeline: `GrammarToAST` → `typedRepAST` → `compiler.Compile`; source of `proto/rep.proto` |
-| `google.go` | runs `tools/robots-dump` (the C++ side's event printer) and diffs event streams |
+| `recoverproto.go` | hand-built `proto/recover.proto` descriptor (`RecoveredRobotstxt`) + `RecoveredToRep` lowering |
+| `genproto.go` | grammar → proto schema (`Genproto`), the kvq/proto-sqlite pipeline: `GrammarToAST` → `typedRepAST` → `compiler.Compile`; emits `proto/rep.proto` AND `proto/recover.proto` into one descriptor set |
+| `google.go` | runs `tools/robots-dump` (the C++ side's event+metadata printer) and diffs both streams |
 
 ## Design decisions & gotchas (hard-won; keep in mind when touching this)
 
@@ -72,9 +75,12 @@ robots.txt bytes ──Normalize──▶ ParseCSTWithOptions(+token matchers)
 ```sh
 go build -o gen/bin/ ./cmd/...          # or just ./build.sh
 gen/bin/gluon grammar                    # validate grammar, list rules
-gen/bin/gluon parse    file.txt          # CST textproto
-gen/bin/gluon rep      file.txt          # typed rep textproto (proto/rep.proto)
-gen/bin/gluon events   file.txt          # google-form events
-gen/bin/gluon check    file.txt ...      # gluon vs google cross-check
-gen/bin/gluon genproto -out gen          # grammar -> gen/rep.{proto,fdset}
+gen/bin/gluon parse    file.txt          # CST textproto (strict only)
+gen/bin/gluon rep      [-recover] f.txt  # typed rep textproto (rep/recover.proto)
+gen/bin/gluon events   [-recover] f.txt  # google-form events
+gen/bin/gluon meta     file.txt          # google-form per-line metadata
+gen/bin/gluon check    [-recover] f...   # gluon vs google cross-check
+                                         #   (-recover: events + metadata,
+                                         #    both corpus tiers must pass)
+gen/bin/gluon genproto -out gen          # grammar -> gen/{rep,recover}.{proto,fdset}
 ```

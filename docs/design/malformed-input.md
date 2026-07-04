@@ -177,10 +177,15 @@ Reason reason}`.)
    the 500 KiB figure is RFC 9309 §2.5's *processing minimum* for
    crawlers, i.e. consumer policy (a crawler may stop after 500 KiB), not
    parser behavior — so neither tier caps total size either.
-5. **Differential fuzzing flips to recovery.** The libprotobuf-mutator plan
-   (fuzz/README.md) targets `ParseRecover` vs robots_dump: *any* divergence
-   on *any* byte string is a bug. Crashers graduate into
-   `testdata/malformed/`. This is the long-run bijectivity proof.
+5. **Differential fuzzing flips to recovery.** ✅ DONE 2026-07-04 (byte-
+   level form). `FuzzDifferential` (fuzz/) runs `Recover` and the real
+   robots_dump binary per execution and requires byte-identical events AND
+   metadata for arbitrary inputs — *any* divergence on *any* byte string is
+   a bug; crashers graduate into `testdata/malformed/`. This is the
+   long-run bijectivity proof, running at ~200 execs/s (subprocess-bound).
+   Follow-on (docs/TODO.md item 2): structure-aware mutation
+   (libprotobuf-mutator-style) blocked on the rep→text renderer (TODO item
+   5); see fuzz/README.md for the upgrade path.
 
 ## Alternatives considered
 
@@ -196,13 +201,17 @@ Reason reason}`.)
   the line-local version; build it here first, upstream the pattern if it
   generalizes (same trajectory as the perf fix / bench harness).
 
-## Open questions
+## Open questions — all resolved during implementation
 
-1. Should typo-UA lines (`useragent:`) open a *new* group in the rep when a
-   strict group is already open, or merge (google's matcher semantics —
-   answer empirically from robots_test.cc / robots_main during phase 1)?
-2. robots_dump metadata (phase 2) changes its output format — version the
-   format (e.g. `META` record prefix) so old consumers keep working.
-3. Do we cap recovery input at 500 KiB to mirror google-at-crawl behavior,
-   or parse unboundedly and leave capping to the future matcher? (Leaning:
-   parse unboundedly; caps are consumer policy.)
+1. *Typo-UA group attachment in the rep* — RESOLVED by shape: the tier-2
+   rep (`RecoveredRobotstxt.lines`) is deliberately FLAT. Group structure
+   is a grammar concept; irregular lines are outside the grammar, so
+   attaching them to synthetic groups would overclaim. Group semantics for
+   irregular UA lines become the future matcher's concern (docs/TODO.md
+   item 4), where google's robots_test.cc cases decide empirically.
+2. *robots_dump format versioning* — RESOLVED: metadata went out as
+   prefixed `META` records; the event records are unchanged, so pre-phase-2
+   consumers (e.g. the bench harness via `GoogleEvents`) keep working.
+3. *500 KiB cap* — RESOLVED: parse unboundedly. robots.cc has no total cap
+   (confirmed); RFC 9309 §2.5's 500 KiB is a crawler processing minimum —
+   consumer policy, to be surfaced by the future matcher, not the parser.

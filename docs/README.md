@@ -13,6 +13,7 @@ somewhere under `docs/`.
 |------|------------------|
 | `docs/rfc/9309/` | RFC 9309 (Robots Exclusion Protocol). `raw.html`/`raw.txt` are **gitignored** (RFC Editor licensing) — rematerialize with `tools/rfc/pull-rfc.sh`. The checked-in `README.md` is our implementer-oriented summary with section citations. The extracted grammar itself lives at `grammar/rep.ebnf` (repo top level, not here). |
 | `docs/google-dev-docs/` | Google Search Central / crawler docs pulled by `tools/google-dev/pull-docs.sh`. Extracted `<slug>.md` files (CC BY 4.0, with attribution headers) are committed; `rawhtml/` is gitignored. `README.md` there is the index — check its per-page extraction-quality notes before trusting an extracted file. |
+| `docs/design/` | Design documents for cross-cutting decisions: [`two-tier-parsing.md`](design/two-tier-parsing.md) (the general strict+recovery pattern and its gluon support audit) and [`malformed-input.md`](design/malformed-input.md) (the robots.txt instance — phases, acceptance criteria, status). Keep status lines in these docs current as phases land. |
 | `docs/progresslog/` | Per-task progress logs: one `<taskname>.md` per task, newest entries at top. See `docs/progresslog/README.md` for the convention. **Agents: actively document your progress there as you work.** |
 | `docs/TODO.md` | The maintained project TODO list, ordered by priority. Add items as you discover work; move finished items to Done with a date and a progresslog pointer. |
 

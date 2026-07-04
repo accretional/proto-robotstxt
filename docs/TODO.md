@@ -13,19 +13,24 @@ relevant `docs/progresslog/<taskname>.md` entry.
    candidate page: `/crawling/docs/robots-txt/useful-robots-txt-rules` (linked from
    the create-robots-txt page but not in the seed set).
 
-2. **Fuzzing: structured differential fuzzing.** Replace/augment the Go-native fuzz
-   harness with <https://github.com/google/libprotobuf-mutator> + libfuzzer driving
-   structured `proto/rep.proto` inputs, fuzzing the gluon parser differentially
-   against the vendored google parser (`src-google/`) — same input, compare
-   parse/match results.
+2. **Fuzzing: structure-aware mutation.** Byte-level DIFFERENTIAL fuzzing
+   exists (`FuzzDifferential`, 2026-07-04: recovery events + metadata vs the
+   real robots_dump per exec — any divergence on any bytes is a bug).
+   Remaining: structure-aware mutation à la
+   <https://github.com/google/libprotobuf-mutator> — mutate
+   `robotstxt.rep.Robotstxt` messages, render to text, reuse the same
+   differential check. BLOCKED ON item 5 (rep→text renderer). Cheap first
+   step once unblocked: pure-Go structured fuzzer over the dynamicpb rep;
+   the libFuzzer/C++ target (BCR has libprotobuf-mutator) adds
+   coverage-guided C++ feedback. See fuzz/README.md.
 
-3. **Malformed-input handling: phases 2–5.** Phase 1 (recovery core:
-   `Grammar.Recover`, `-recover` CLI, both corpus tiers cross-checking
-   google — see docs/progresslog/two-tier-phase1.md) is DONE 2026-07-04.
-   Remaining per `docs/design/malformed-input.md`: metadata bijectivity
-   (extend robots_dump with ReportLineMetadata), proto/recover.proto +
-   `rep -recover`, line-too-long (2083×8) truncation semantics, and
-   flipping differential fuzzing to target Recover.
+3. **Malformed-input handling: COMPLETE (phases 1–5, 2026-07-04).** All
+   phases of `docs/design/malformed-input.md` are done — recovery core,
+   metadata bijectivity, proto/recover.proto, line-length semantics, and
+   byte-level differential fuzzing (see docs/progresslog/two-tier-phase1.md
+   and two-tier-phases2-5.md). The strict BNF core was never loosened.
+   Remaining related work lives in items 2 (structure-aware fuzzing) and 4
+   (bijective matcher).
    Note the RFC's own `Disallow: *.gif$` example (RFC 9309 §5.1) is rejected by its
    own ABNF (`path-pattern = "/" *UTF8-char-noctl`, §2.2) — see
    `docs/rfc/9309/README.md` — so even "spec-level" inputs need this layer.

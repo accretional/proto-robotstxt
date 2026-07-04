@@ -10,6 +10,7 @@ package fuzz
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	robotsgluon "github.com/accretional/proto-robotstxt/src-gluon"
@@ -106,4 +107,60 @@ func assertEventOrder(t *testing.T, events []robotsgluon.Event, data []byte) {
 		}
 		last = e.Line
 	}
+}
+
+// findDumpBin locates the robots_dump binary built by ./build.sh (or a raw
+// bazel build); empty string if absent.
+func findDumpBin() string {
+	for _, p := range []string{
+		"../gen/bin/robots_dump",
+		"../bazel-bin/tools/robots-dump/robots_dump",
+	} {
+		if st, err := os.Stat(p); err == nil && st.Mode()&0o111 != 0 {
+			abs, err := filepath.Abs(p)
+			if err == nil {
+				return abs
+			}
+		}
+	}
+	return ""
+}
+
+// FuzzDifferential is the phase-5 gate (docs/design/malformed-input.md):
+// for ARBITRARY bytes, the two-tier parse must produce byte-identical
+// events AND per-line metadata to google's parser. Any divergence on any
+// input is a bug — either in our grammar/recovery or an undocumented
+// google leniency to fold in. Runs the real C++ binary per execution
+// (~200 execs/s); confirmed divergent inputs graduate into
+// testdata/malformed/.
+func FuzzDifferential(f *testing.F) {
+	dump := findDumpBin()
+	if dump == "" {
+		f.Skip("robots_dump not built (run ./build.sh); skipping differential fuzz")
+	}
+	addSeeds(f)
+	g, err := robotsgluon.Default()
+	if err != nil {
+		f.Fatalf("grammar: %v", err)
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		rec, err := g.Recover(data)
+		if err != nil {
+			t.Fatalf("Recover must be total, failed on %q: %v", data, err)
+		}
+		path := filepath.Join(t.TempDir(), "input.txt")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		google, err := robotsgluon.GoogleParse(dump, path)
+		if err != nil {
+			t.Fatalf("robots_dump on %q: %v", data, err)
+		}
+		if diffs := robotsgluon.DiffEvents(rec.Events, google.Events); len(diffs) != 0 {
+			t.Fatalf("EVENT divergence on %q (%s):\n%s", data, rec.RecoverSummary(), strings.Join(diffs, "\n"))
+		}
+		if diffs := robotsgluon.DiffMetadata(rec.Metadata, google.Metadata); len(diffs) != 0 {
+			t.Fatalf("METADATA divergence on %q (%s):\n%s", data, rec.RecoverSummary(), strings.Join(diffs, "\n"))
+		}
+	})
 }

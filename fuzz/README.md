@@ -2,40 +2,44 @@
 
 Fuzzing harnesses for the gluon-grammar robots.txt parser (src-gluon/).
 
-## Now: Go-native fuzzing
+## Harnesses
 
 ```sh
-go test ./fuzz/                 # replay corpus + seeds (runs in test.sh)
-go test -fuzz=FuzzParse -fuzztime=60s ./fuzz/
+go test ./fuzz/                                    # replay corpus + seeds (runs in test.sh)
+go test -fuzz=FuzzParse        -fuzztime=60s ./fuzz/
+go test -fuzz=FuzzRecover      -fuzztime=60s ./fuzz/
+go test -fuzz=FuzzDifferential -fuzztime=300s ./fuzz/   # needs ./build.sh first
 ```
 
-`FuzzParse` feeds arbitrary bytes to the strict parser and asserts: no
-panics/hangs; every input the grammar accepts also lowers cleanly to the
-typed rep (proto/rep.proto) and to google-form events with sane, ordered
-line numbers. Seeds come from `testdata/` (both tiers).
+| fuzzer | invariants | speed (M4) |
+|---|---|---|
+| `FuzzParse` | strict parser never panics/hangs; every accepted input lowers cleanly to the typed rep AND to ordered events | ~16k execs/s |
+| `FuzzRecover` | the two-tier parse is **total** (any bytes → a result); metadata records consecutive from 1; tier 2 never shadows tier 1 (strict-accepted input ⇒ identical events) | ~2k execs/s |
+| `FuzzDifferential` | **the phase-5 gate** (docs/design/malformed-input.md): for arbitrary bytes, recovery events AND per-line metadata are byte-identical to google's parser (real `robots_dump` subprocess per exec) | ~200 execs/s |
 
-Found crashers land in `testdata/fuzz/FuzzParse/` (Go's default corpus dir
+Any `FuzzDifferential` failure is a real finding: either a bug in our
+grammar/recovery or an undocumented google leniency. Triage the minimized
+crasher, fix or fold the behavior into the recovery layer, and graduate the
+input into `testdata/malformed/` so it stays covered forever.
+
+Found crashers land in `testdata/fuzz/<FuzzName>/` (Go's default corpus dir
 for this package); check them in after triage so regressions stay covered.
 
-## Next: structure-aware differential fuzzing (docs/TODO.md)
+Seeds come from `testdata/` (both tiers). All fuzzers skip gracefully when
+their prerequisites are missing.
 
-The plan from the project README is to use something like
+## Next: structure-aware mutation (docs/TODO.md item 2)
+
+Byte-level mutation reaches shallow paths quickly but deep grammar shapes
+slowly. The planned upgrade — something like
 [google/libprotobuf-mutator](https://github.com/google/libprotobuf-mutator)
-with libFuzzer:
+with libFuzzer — mutates `robotstxt.rep.Robotstxt` messages
+(proto/rep.proto) instead of bytes, renders each mutant to robots.txt text,
+and feeds the SAME differential check as `FuzzDifferential`.
 
-1. mutate `robotstxt.rep.Robotstxt` messages (proto/rep.proto) rather than
-   raw bytes — structure-aware mutation reaches deep grammar paths that
-   byte-flipping cannot;
-2. render each mutant to robots.txt text (needs the rep -> text renderer,
-   also a TODO — the "generating robots.txt files" tooling);
-3. run BOTH parsers on the rendered text and diff:
-   gluon events (src-gluon) vs google's (tools/robots-dump handler stream),
-   plus RobotsMatcher allow/disallow decisions once the matcher lands;
-4. any divergence on grammar-valid input is a bug: either in our grammar
-   formalization or a documented google-parser leniency to fold into the
-   malformed-input layer.
-
-The C++ side would live here (cc_fuzz target depending on
-`//src-google:robots` and `@libprotobuf_mutator`, driven by the checked-in
-`proto/rep.proto`); Bazel Central Registry has libprotobuf-mutator, so the
-dep is one `bazel_dep` away when we pick this up.
+Dependency: the rep → text renderer (docs/TODO.md item 5, the
+"generating robots.txt files" tooling) does not exist yet. Once it does,
+the cheap version is a pure-Go structured fuzzer (mutate the dynamicpb rep,
+render, reuse `FuzzDifferential`'s body); the libFuzzer/C++ version
+(cc_fuzz target on `//src-google:robots` + `@libprotobuf_mutator` from BCR)
+buys coverage-guided C++-side feedback on top.
