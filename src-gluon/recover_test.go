@@ -3,10 +3,11 @@ package robotsgluon
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestExtractIrregular(t *testing.T) {
+func TestParseGoogleLine(t *testing.T) {
 	cases := []struct{ name, line, key, value, reason string }{
 		{"missing colon", "Disallow /tmp", "Disallow", "/tmp", "missing-colon-separator"},
 		{"missing colon tabs", "Disallow\t\t/tmp", "Disallow", "/tmp", "missing-colon-separator"},
@@ -20,35 +21,87 @@ func TestExtractIrregular(t *testing.T) {
 		{"comment strip", "Disallow: /a #b", "Disallow", "/a", "directive-outside-grammar"},
 		{"nul truncates", "Disallow: /x\x00#hidden", "Disallow", "/x", "directive-outside-grammar"},
 		{"nul kills separator", "Disallow\x00: /x", "", "", "no-separator"},
-		{"colon wins over ws", "user agent: FooBot", "user agent", "FooBot", "directive-outside-grammar"},
 	}
 	for _, c := range cases {
-		key, value, reason := extractIrregular(c.line)
-		if key != c.key || value != c.value || reason != c.reason {
-			t.Errorf("%s: extractIrregular(%q) = (%q,%q,%q), want (%q,%q,%q)",
-				c.name, c.line, key, value, reason, c.key, c.value, c.reason)
+		d := parseGoogleLine(c.line)
+		if d.key != c.key || d.value != c.value || d.reason != c.reason {
+			t.Errorf("%s: parseGoogleLine(%q) = (%q,%q,%q), want (%q,%q,%q)",
+				c.name, c.line, d.key, d.value, d.reason, c.key, c.value, c.reason)
 		}
 	}
 }
 
-func TestSplitPhysicalLines(t *testing.T) {
-	segs := splitPhysicalLines([]byte("a\nb\r\nc\rd\n"))
+func TestClassifyKeyTypo(t *testing.T) {
+	cases := []struct {
+		key  string
+		kind EventKind
+		typo bool
+	}{
+		{"user-agent", UserAgent, false},
+		{"User-Agent-Foo", UserAgent, false},
+		{"useragent", UserAgent, true},
+		{"user agent", UserAgent, true},
+		{"allow", Allow, false},
+		{"Allowed", Allow, false},
+		{"disallow", Disallow, false},
+		{"Dissallow", Disallow, true},
+		{"disalow", Disallow, true},
+		{"sitemap", Sitemap, false},
+		{"site-map", Sitemap, true},
+		{"crawl-delay", Unknown, false},
+	}
+	for _, c := range cases {
+		kind, typo := classifyKeyTypo(c.key)
+		if kind != c.kind || typo != c.typo {
+			t.Errorf("classifyKeyTypo(%q) = (%s,%v), want (%s,%v)", c.key, kind, typo, c.kind, c.typo)
+		}
+	}
+}
+
+func TestGoogleLines(t *testing.T) {
+	lines := googleLines([]byte("a\nb\r\nc\rd\n"))
 	want := []struct {
-		num  int32
-		text string
-	}{{1, "a"}, {2, "b"}, {3, "c"}, {4, "d"}}
-	if len(segs) != len(want) {
-		t.Fatalf("got %d segments, want %d: %+v", len(segs), len(want), segs)
+		num   int32
+		text  string
+		final bool
+	}{{1, "a", false}, {2, "b", false}, {3, "c", false}, {4, "d", false}, {5, "", true}}
+	if len(lines) != len(want) {
+		t.Fatalf("got %d lines, want %d: %+v", len(lines), len(want), lines)
 	}
 	for i, w := range want {
-		if segs[i].num != w.num || segs[i].text != w.text {
-			t.Errorf("seg %d = {%d,%q}, want {%d,%q}", i, segs[i].num, segs[i].text, w.num, w.text)
+		if lines[i].num != w.num || lines[i].text != w.text || lines[i].final != w.final {
+			t.Errorf("line %d = {%d,%q,final=%v}, want {%d,%q,final=%v}",
+				i, lines[i].num, lines[i].text, lines[i].final, w.num, w.text, w.final)
 		}
+	}
+	// Unterminated tail is the final segment with content.
+	lines = googleLines([]byte("x: y"))
+	if len(lines) != 1 || lines[0].text != "x: y" || !lines[0].final {
+		t.Fatalf("unterminated: %+v", lines)
+	}
+	// BOM is consumed before line 1.
+	lines = googleLines([]byte("\xEF\xBB\xBFa\n"))
+	if lines[0].text != "a" {
+		t.Fatalf("BOM not consumed: %+v", lines)
+	}
+}
+
+func TestGoogleLinesTooLong(t *testing.T) {
+	long := strings.Repeat("a", maxLineLen+100)
+	lines := googleLines([]byte("ok: 1\n" + long + "\nok: 2\n"))
+	if lines[0].tooLong || lines[2].tooLong {
+		t.Error("short lines flagged too-long")
+	}
+	if !lines[1].tooLong {
+		t.Error("long line not flagged")
+	}
+	if len(lines[1].text) != maxLineLen-1 {
+		t.Errorf("long line truncated to %d bytes, want %d", len(lines[1].text), maxLineLen-1)
 	}
 }
 
 // TestRecoverStrictUsesTier1 pins that spec-valid input takes the strict
-// path and produces the same events as Events().
+// path, produces the same events as Events(), and still carries metadata.
 func TestRecoverStrictUsesTier1(t *testing.T) {
 	g := mustGrammar(t)
 	src := []byte("User-agent: *\nDisallow: /private\nSitemap: https://x.example/s.xml\n")
@@ -68,6 +121,13 @@ func TestRecoverStrictUsesTier1(t *testing.T) {
 	}
 	if diffs := DiffEvents(rec.Events, strict); len(diffs) != 0 {
 		t.Errorf("recover-vs-strict events differ: %v", diffs)
+	}
+	// 3 content lines + google's phantom EOF line.
+	if len(rec.Metadata) != 4 {
+		t.Fatalf("metadata records = %d, want 4: %v", len(rec.Metadata), rec.Metadata)
+	}
+	if !rec.Metadata[3].IsEmpty || rec.Metadata[3].Line != 4 {
+		t.Errorf("EOF metadata record wrong: %v", rec.Metadata[3])
 	}
 }
 
@@ -103,7 +163,7 @@ func TestRecoverGolden(t *testing.T) {
 			t.Errorf("golden (gluon | want): %s", d)
 		}
 	}
-	// Line records: 8 lines, strict rules recorded where they matched.
+	// Line records: 8 content lines (phantom EOF line excluded).
 	if len(rec.Lines) != 8 {
 		t.Fatalf("got %d line records, want 8: %+v", len(rec.Lines), rec.Lines)
 	}
@@ -114,11 +174,21 @@ func TestRecoverGolden(t *testing.T) {
 				i+1, rec.Lines[i].Rule, rec.Lines[i].Irregular, rec.Lines[i].Reason, wr)
 		}
 	}
+	// Metadata spot checks: 9 records (8 lines + EOF), typo flag on line 3.
+	if len(rec.Metadata) != 9 {
+		t.Fatalf("metadata records = %d, want 9", len(rec.Metadata))
+	}
+	if !rec.Metadata[1].IsMissingColonSeparator || !rec.Metadata[1].HasDirective {
+		t.Errorf("line 2 metadata: %v", rec.Metadata[1])
+	}
+	if !rec.Metadata[2].IsAcceptableTypo {
+		t.Errorf("line 3 should be flagged acceptable-typo: %v", rec.Metadata[2])
+	}
 }
 
-// TestRecoverCrossGoogle is the phase-1 acceptance gate
-// (docs/design/malformed-input.md): recovery events must equal google's for
-// EVERY corpus file — the strict tier AND the malformed tier.
+// TestRecoverCrossGoogle is the acceptance gate for phases 1+2
+// (docs/design/malformed-input.md): recovery events AND metadata must equal
+// google's for EVERY corpus file — the strict tier AND the malformed tier.
 func TestRecoverCrossGoogle(t *testing.T) {
 	g := mustGrammar(t)
 	dump := findDumpBin(t)
@@ -142,16 +212,59 @@ func TestRecoverCrossGoogle(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Recover: %v", err)
 			}
-			googleEvents, err := GoogleEvents(dump, f)
+			google, err := GoogleParse(dump, f)
 			if err != nil {
 				t.Fatalf("robots_dump: %v", err)
 			}
-			if diffs := DiffEvents(rec.Events, googleEvents); len(diffs) != 0 {
+			if diffs := DiffEvents(rec.Events, google.Events); len(diffs) != 0 {
 				t.Logf("recovery: %s", rec.RecoverSummary())
+				for _, d := range diffs {
+					t.Errorf("event %s", d)
+				}
+			}
+			if diffs := DiffMetadata(rec.Metadata, google.Metadata); len(diffs) != 0 {
 				for _, d := range diffs {
 					t.Errorf("%s", d)
 				}
 			}
 		})
+	}
+}
+
+// TestRecoverTooLongLine pins google's per-line length cap (phase 4): a
+// line over kMaxLineLen bypasses tier 1 and both parsers agree on the
+// truncated value and the too-long metadata flag.
+func TestRecoverTooLongLine(t *testing.T) {
+	g := mustGrammar(t)
+	dump := findDumpBin(t)
+	long := "/" + strings.Repeat("a", maxLineLen+500)
+	src := []byte("User-agent: *\nDisallow: " + long + "\nAllow: /ok\n")
+	f := filepath.Join(t.TempDir(), "long.txt")
+	if err := os.WriteFile(f, src, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := g.Recover(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Strict != nil {
+		t.Fatal("too-long line must bypass tier 1 (google parses truncated content)")
+	}
+	google, err := GoogleParse(dump, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diffs := DiffEvents(rec.Events, google.Events); len(diffs) != 0 {
+		for _, d := range diffs {
+			t.Errorf("event %s", d)
+		}
+	}
+	if diffs := DiffMetadata(rec.Metadata, google.Metadata); len(diffs) != 0 {
+		for _, d := range diffs {
+			t.Errorf("%s", d)
+		}
+	}
+	if !rec.Metadata[1].IsLineTooLong {
+		t.Error("line 2 not flagged too-long")
 	}
 }

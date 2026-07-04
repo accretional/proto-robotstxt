@@ -16,9 +16,16 @@ import (
 	"strings"
 )
 
-// GoogleEvents runs dumpBin (the robots_dump binary) on robotsPath and
-// returns google's parse-event stream.
-func GoogleEvents(dumpBin string, robotsPath string) ([]Event, error) {
+// GoogleResult is one robots_dump run: the handler-event stream plus the
+// ReportLineMetadata stream, in emission order.
+type GoogleResult struct {
+	Events   []Event
+	Metadata []LineMetadata
+}
+
+// GoogleParse runs dumpBin (the robots_dump binary) on robotsPath and
+// returns google's full deserialization: events and per-line metadata.
+func GoogleParse(dumpBin string, robotsPath string) (*GoogleResult, error) {
 	out, err := exec.Command(dumpBin, robotsPath).Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -29,8 +36,17 @@ func GoogleEvents(dumpBin string, robotsPath string) ([]Event, error) {
 	return parseDump(out)
 }
 
-func parseDump(out []byte) ([]Event, error) {
-	var events []Event
+// GoogleEvents is GoogleParse reduced to the event stream.
+func GoogleEvents(dumpBin string, robotsPath string) ([]Event, error) {
+	res, err := GoogleParse(dumpBin, robotsPath)
+	if err != nil {
+		return nil, err
+	}
+	return res.Events, nil
+}
+
+func parseDump(out []byte) (*GoogleResult, error) {
+	var res GoogleResult
 	sc := bufio.NewScanner(bytes.NewReader(out))
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	for sc.Scan() {
@@ -39,6 +55,14 @@ func parseDump(out []byte) ([]Event, error) {
 			continue
 		}
 		f := strings.Split(line, "\t")
+		if f[0] == "META" {
+			m, err := parseMetaRecord(f)
+			if err != nil {
+				return nil, fmt.Errorf("robots_dump: %w in %q", err, line)
+			}
+			res.Metadata = append(res.Metadata, m)
+			continue
+		}
 		if len(f) != 4 {
 			return nil, fmt.Errorf("robots_dump: bad record %q", line)
 		}
@@ -54,7 +78,7 @@ func parseDump(out []byte) ([]Event, error) {
 		if err != nil {
 			return nil, fmt.Errorf("robots_dump: bad value in %q: %w", line, err)
 		}
-		events = append(events, Event{
+		res.Events = append(res.Events, Event{
 			Line:  int32(num),
 			Kind:  EventKind(f[0]),
 			Key:   string(key),
@@ -64,7 +88,34 @@ func parseDump(out []byte) ([]Event, error) {
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
-	return events, nil
+	return &res, nil
+}
+
+// parseMetaRecord decodes META\tline\t<7 flags> (flag order matches
+// LineMetadata's declaration order in robots.h; see robots_dump.cc).
+func parseMetaRecord(f []string) (LineMetadata, error) {
+	var m LineMetadata
+	if len(f) != 9 {
+		return m, fmt.Errorf("bad META record: %d fields", len(f))
+	}
+	num, err := strconv.ParseInt(f[1], 10, 32)
+	if err != nil {
+		return m, fmt.Errorf("bad META line number: %w", err)
+	}
+	m.Line = int32(num)
+	for i, dst := range []*bool{
+		&m.IsEmpty, &m.HasComment, &m.IsComment, &m.HasDirective,
+		&m.IsAcceptableTypo, &m.IsLineTooLong, &m.IsMissingColonSeparator,
+	} {
+		switch f[2+i] {
+		case "0":
+		case "1":
+			*dst = true
+		default:
+			return m, fmt.Errorf("bad META flag %q", f[2+i])
+		}
+	}
+	return m, nil
 }
 
 // DiffEvents compares two event streams and returns a human-readable list of

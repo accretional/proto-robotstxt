@@ -50,6 +50,8 @@ func main() {
 		err = cmdEvents(g, args)
 	case "rep":
 		err = cmdRep(g, args)
+	case "meta":
+		err = cmdMeta(args)
 	case "check":
 		err = cmdCheck(g, args)
 	case "genproto":
@@ -71,6 +73,8 @@ commands:
   parse <file>             parse a robots.txt; print the CST as textproto
   rep <file>               parse; print the typed rep (proto/rep.proto) as textproto
   events [-recover] <file> parse; print google-deserialization-form events
+  meta <file>              print the per-line metadata stream (google
+                           ReportLineMetadata form; pure line-local pass)
   check [-dump bin] [-recover] <f>...
                            parse each file with BOTH parsers; diff the events
   genproto [-out dir]      derive proto schema from the grammar -> rep.proto/.fdset
@@ -145,6 +149,20 @@ func cmdRep(g *robotsgluon.Grammar, args []string) error {
 	return err
 }
 
+func cmdMeta(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("meta: want exactly one file argument")
+	}
+	src, err := os.ReadFile(args[0])
+	if err != nil {
+		return err
+	}
+	for _, m := range robotsgluon.LineMetadataOf(src) {
+		fmt.Println(m)
+	}
+	return nil
+}
+
 func cmdEvents(g *robotsgluon.Grammar, args []string) error {
 	fs := flag.NewFlagSet("events", flag.ExitOnError)
 	recover := fs.Bool("recover", false, "two-tier parse: fall back to line-level recovery when the strict parse fails (docs/design/malformed-input.md)")
@@ -199,13 +217,14 @@ func cmdCheck(g *robotsgluon.Grammar, args []string) error {
 			return err
 		}
 		var gluonEvents []robotsgluon.Event
+		var gluonMeta []robotsgluon.LineMetadata
 		tier := ""
 		if *recover {
 			rec, err := g.Recover(src)
 			if err != nil {
 				return fmt.Errorf("check %s: %w", f, err)
 			}
-			gluonEvents = rec.Events
+			gluonEvents, gluonMeta = rec.Events, rec.Metadata
 			if rec.Strict == nil {
 				tier = " (recovered)"
 			}
@@ -216,18 +235,26 @@ func cmdCheck(g *robotsgluon.Grammar, args []string) error {
 				continue
 			}
 		}
-		googleEvents, err := robotsgluon.GoogleEvents(*dump, f)
+		google, err := robotsgluon.GoogleParse(*dump, f)
 		if err != nil {
 			return fmt.Errorf("check %s: %w", f, err)
 		}
-		if diffs := robotsgluon.DiffEvents(gluonEvents, googleEvents); len(diffs) > 0 {
-			fmt.Printf("MISMATCH    %-40s %d event(s) differ%s\n", f, len(diffs), tier)
+		diffs := robotsgluon.DiffEvents(gluonEvents, google.Events)
+		if *recover {
+			diffs = append(diffs, robotsgluon.DiffMetadata(gluonMeta, google.Metadata)...)
+		}
+		if len(diffs) > 0 {
+			fmt.Printf("MISMATCH    %-40s %d record(s) differ%s\n", f, len(diffs), tier)
 			for _, d := range diffs {
 				fmt.Printf("            %s\n", d)
 			}
 			failures++
 		} else {
-			fmt.Printf("PASS        %-40s %d event(s) agree%s\n", f, len(gluonEvents), tier)
+			what := fmt.Sprintf("%d event(s)", len(gluonEvents))
+			if *recover {
+				what += fmt.Sprintf(" + %d metadata", len(gluonMeta))
+			}
+			fmt.Printf("PASS        %-40s %s agree%s\n", f, what, tier)
 		}
 	}
 	if failures > 0 {

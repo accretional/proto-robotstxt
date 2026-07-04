@@ -4,12 +4,20 @@
 //
 //   START
 //   KIND \t line \t base64(key) \t base64(value)
+//   META \t line \t e \t hc \t ic \t hd \t at \t tl \t mc
 //   END
 //
 // KIND is USER_AGENT / ALLOW / DISALLOW / SITEMAP / UNKNOWN (robots.cc
 // KeyType). key is only populated for UNKNOWN (HandleUnknownAction is the
 // only handler that receives it). Values are base64-armored so tabs,
 // newlines-in-theory and arbitrary bytes survive the TSV framing.
+//
+// META records mirror RobotsParseHandler::ReportLineMetadata — exactly one
+// per physical line, interleaved in callback order (google emits the
+// directive event first, then that line's metadata). The seven 0/1 flags
+// follow LineMetadata's declaration order in robots.h: is_empty,
+// has_comment, is_comment, has_directive, is_acceptable_typo,
+// is_line_too_long, is_missing_colon_separator.
 //
 // This is OUR tool, not vendored: it lives outside src-google/ so the
 // vendored tree stays byte-identical to upstream. The gluon side
@@ -48,6 +56,14 @@ class DumpHandler : public googlebot::RobotsParseHandler {
   void HandleUnknownAction(int line_num, absl::string_view action,
                            absl::string_view value) override {
     Emit("UNKNOWN", line_num, action, value);
+  }
+
+  void ReportLineMetadata(int line_num, const LineMetadata& m) override {
+    std::cout << "META\t" << line_num << '\t' << m.is_empty << '\t'
+              << m.has_comment << '\t' << m.is_comment << '\t'
+              << m.has_directive << '\t' << m.is_acceptable_typo << '\t'
+              << m.is_line_too_long << '\t' << m.is_missing_colon_separator
+              << '\n';
   }
 
  private:

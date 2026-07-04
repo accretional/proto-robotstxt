@@ -149,16 +149,30 @@ Reason reason}`.)
    unchanged. Notes: `parse -recover`/`rep -recover` deferred to phase 3
    (no single CST exists for a recovered doc); LineResult.Reason carries
    the phase-2 metadata seed.
-2. **Metadata bijectivity.** Extend tools/robots-dump to also emit
-   `ReportLineMetadata` records; mirror them in recovery; extend
-   `DiffEvents` to a `DiffParse` covering events + metadata.
-   *Acceptance:* metadata streams byte-equal across both tiers.
+2. **Metadata bijectivity.** ✅ DONE 2026-07-04. robots-dump emits `META`
+   records (one per physical line, robots.h flag order, interleaved in
+   callback order); Go side computes the same stream in a pure line-local
+   pass (src-gluon/metadata.go: `googleLines` + `parseGoogleLine` +
+   `classifyKeyTypo`) that recovery reuses for its fallback, so events and
+   metadata can never disagree about a line. `GoogleParse` returns both
+   streams; `DiffMetadata` + `gluon check -recover` and
+   `TestRecoverCrossGoogle` compare them. `gluon meta` prints the stream.
+   *Acceptance met:* metadata byte-equal across both corpus tiers,
+   including google's phantom EOF record and `is_acceptable_typo` flags.
 3. **Typed rep for recovery.** `proto/recover.proto` + `Recovered → proto`
    lowering; `gluon rep -recover` prints it.
-4. **Size/limit semantics.** Port google's line-length cap (2083×8 bytes,
-   `is_line_too_long`, truncation point) and document the 500 KiB
-   RFC 9309 §2.5 processing minimum (matcher-level concern; robots.cc does
-   not cap parse size — confirm and record).
+4. **Size/limit semantics.** ✅ DONE 2026-07-04 (folded into the phase-2
+   line scanner). `googleLines` ports the cap exactly: content beyond
+   `kMaxLineLen-1` (= 2083×8−1 = 16663) bytes is dropped and the line
+   flagged; a document containing any too-long line BYPASSES tier 1 (google
+   parses truncated content, so even spec-valid documents deserialize
+   differently — recovery applies the same truncation; strict `Parse`
+   stays cap-free/RFC-pure). Corpus: `testdata/malformed/line-too-long.txt`
+   + `TestRecoverTooLongLine` (differential, incl. metadata). CONFIRMED:
+   robots.cc `Parse()` has NO total-input cap — it iterates the whole body;
+   the 500 KiB figure is RFC 9309 §2.5's *processing minimum* for
+   crawlers, i.e. consumer policy (a crawler may stop after 500 KiB), not
+   parser behavior — so neither tier caps total size either.
 5. **Differential fuzzing flips to recovery.** The libprotobuf-mutator plan
    (fuzz/README.md) targets `ParseRecover` vs robots_dump: *any* divergence
    on *any* byte string is a bug. Crashers graduate into

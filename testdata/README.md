@@ -101,3 +101,7 @@ Google's parser handles all of these; the strict RFC grammar must reject
 | `no-final-newline.txt` | Last line has no trailing newline (created with `printf`, verified with `xxd`). | Final unterminated line is still parsed (`/truncated/x` disallowed); strict grammar requires NL on every line. |
 | `control-bytes.txt` | NUL byte mid-value; BEL (0x07) and ESC (0x1B) in values. | NUL truncates the rest of the line for key/value extraction (C-string parsing); other control bytes are kept verbatim in the emitted value (< 0x80 so not escaped). |
 | `invalid-utf8.txt` | Latin-1 `0xE9`, `0xFF 0xFE`, overlong `0xC0 0xAF` in paths. | Any byte with the high bit set is blindly %-escaped (`0xE9` ⇒ `%E9`) with no UTF-8 validation; `/overlong-%C0%AF` verified disallowed. |
+
+Added 2026-07-04 (phase 4, docs/design/malformed-input.md):
+
+| `malformed/line-too-long.txt` | a Disallow line of ~17 KB — over google's per-line cap (`kMaxLineLen` = 2083×8 = 16664; content beyond 16663 bytes is dropped and the line flagged `is_line_too_long`) | google truncates the pattern; strict tier is bypassed in recovery (tier-1 semantics would use the untruncated value) |

@@ -75,6 +75,16 @@ func FuzzRecover(f *testing.F) {
 			t.Fatalf("Recover must be total, failed on %q: %v", data, err)
 		}
 		assertEventOrder(t, rec.Events, data)
+		// Metadata mirrors google's per-line accounting: at least the EOF
+		// record, consecutively numbered from 1.
+		if len(rec.Metadata) == 0 {
+			t.Fatalf("no metadata records for %q", data)
+		}
+		for i, m := range rec.Metadata {
+			if m.Line != int32(i+1) {
+				t.Fatalf("metadata line numbers not consecutive at %d: %v (input %q)", i, m, data)
+			}
+		}
 		if rec.Strict != nil {
 			strict, err := g.Events(data)
 			if err != nil {
