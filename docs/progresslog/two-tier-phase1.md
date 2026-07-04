@@ -54,3 +54,14 @@ acceptance gate green on first full run.
 - Phase 3: proto/recover.proto + `rep -recover`.
 - Phase 4: line-too-long (2083×8) truncation semantics.
 - Phase 5: differential fuzzing targets Recover (libprotobuf-mutator plan).
+
+### Addendum (same day): recovery cost quantified
+
+Added `bench/recover_bench_test.go` (tier-2 vs tier-1 cost; the before/after
+record for gluon#8 item 2). Tier-2 recovery: ~0.13–0.18 MB/s (~220µs per
+irregular line — up to 5 StartRule attempts × ~44µs per-call grammar
+conversion) vs tier-1 passthrough ~3.1 MB/s. Posted to gluon#8 with the
+assessment: correctness unaffected, not blocking phase 2; becomes material
+for phase-5 fuzz volume and larger grammars. Fun fact from the run:
+value-no-slash.txt actually passes tier 1 (otherline covers it), confirming
+recovery only engages where the grammar genuinely can't.
