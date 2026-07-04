@@ -53,6 +53,18 @@ case "${status}" in
   *) echo "[run] robots_main failed with status ${status}" >&2; exit "${status}" ;;
 esac
 
+# Same decision from our matcher port (gluon allowed mirrors robots_main's
+# argument and exit-code contract).
+set +e
+gen/bin/gluon allowed "${ROBOTS}" "${AGENT}" "${URL}"
+gluon_status=$?
+set -e
+if [ "${gluon_status}" != "${status}" ]; then
+  echo "[run] MATCHER DIVERGENCE: robots_main=${status} gluon=${gluon_status}" >&2
+  exit 1
+fi
+log "gluon matcher agrees with robots_main"
+
 # --- 3. gluon grammar parser --------------------------------------------------
 log "gluon typed rep (grammar/rep.ebnf -> proto/rep.proto shape):"
 gen/bin/gluon -grammar grammar/rep.ebnf rep "${ROBOTS}" | sed 's/^/    /'

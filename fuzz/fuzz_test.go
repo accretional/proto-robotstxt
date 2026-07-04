@@ -9,6 +9,7 @@ package fuzz
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -161,6 +162,71 @@ func FuzzDifferential(f *testing.F) {
 		}
 		if diffs := robotsgluon.DiffMetadata(rec.Metadata, google.Metadata); len(diffs) != 0 {
 			t.Fatalf("METADATA divergence on %q (%s):\n%s", data, rec.RecoverSummary(), strings.Join(diffs, "\n"))
+		}
+	})
+}
+
+// findRobotsMain locates google's decision CLI; empty string if absent.
+func findRobotsMain() string {
+	for _, p := range []string{
+		"../gen/bin/robots_main",
+		"../bazel-bin/src-google/robots_main",
+	} {
+		if st, err := os.Stat(p); err == nil && st.Mode()&0o111 != 0 {
+			if abs, err := filepath.Abs(p); err == nil {
+				return abs
+			}
+		}
+	}
+	return ""
+}
+
+// FuzzMatcher differentially fuzzes the DECISION surface: for arbitrary
+// (robots.txt bytes, agent, url) triples, our event-driven matcher port
+// must reach the same allow/disallow verdict as google's robots_main.
+func FuzzMatcher(f *testing.F) {
+	robotsMain := findRobotsMain()
+	if robotsMain == "" {
+		f.Skip("robots_main not built (run ./build.sh); skipping matcher fuzz")
+	}
+	g, err := robotsgluon.Default()
+	if err != nil {
+		f.Fatalf("grammar: %v", err)
+	}
+	for _, pattern := range []string{"../testdata/*.txt", "../testdata/malformed/*.txt"} {
+		files, _ := filepath.Glob(pattern)
+		for _, file := range files {
+			if data, err := os.ReadFile(file); err == nil {
+				f.Add(data, "FooBot", "https://example.com/x/y")
+			}
+		}
+	}
+	f.Add([]byte("User-agent: *\nDisallow: /\n"), "any", "https://e.com/")
+	f.Add([]byte("User-agent: a\nAllow: /*.gif$\nDisallow: /\n"), "a", "https://e.com/p.gif")
+	f.Fuzz(func(t *testing.T, robots []byte, agent, url string) {
+		// robots_main receives agent/url as argv; NUL cannot cross exec.
+		if strings.ContainsRune(agent, 0) || strings.ContainsRune(url, 0) {
+			t.Skip()
+		}
+		ours, err := g.Allowed(robots, agent, url)
+		if err != nil {
+			t.Fatalf("Allowed must be total: %v", err)
+		}
+		path := filepath.Join(t.TempDir(), "robots.txt")
+		if err := os.WriteFile(path, robots, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(robotsMain, path, agent, url)
+		gerr := cmd.Run()
+		google := gerr == nil
+		if gerr != nil {
+			if ee, ok := gerr.(*exec.ExitError); !ok || ee.ExitCode() != 1 {
+				t.Fatalf("robots_main failed: %v", gerr)
+			}
+		}
+		if ours != google {
+			t.Fatalf("DECISION divergence: robots=%q agent=%q url=%q: gluon=%v google=%v",
+				robots, agent, url, ours, google)
 		}
 	})
 }

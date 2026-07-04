@@ -53,6 +53,8 @@ func main() {
 		err = cmdRep(g, args)
 	case "meta":
 		err = cmdMeta(args)
+	case "allowed":
+		err = cmdAllowed(g, args)
 	case "check":
 		err = cmdCheck(g, args)
 	case "genproto":
@@ -77,6 +79,10 @@ commands:
   events [-recover] <file> parse; print google-deserialization-form events
   meta <file>              print the per-line metadata stream (google
                            ReportLineMetadata form; pure line-local pass)
+  allowed <file> <agent> <url>
+                           allow/disallow decision (RobotsMatcher port over
+                           the two-tier parse); exit 0 allowed, 1 disallowed
+                           — argument/exit parity with robots_main
   check [-dump bin] [-recover] <f>...
                            parse each file with BOTH parsers; diff the events
   genproto [-out dir]      derive proto schema from the grammar -> rep.proto/.fdset
@@ -177,6 +183,29 @@ func cmdMeta(args []string) error {
 	}
 	for _, m := range robotsgluon.LineMetadataOf(src) {
 		fmt.Println(m)
+	}
+	return nil
+}
+
+func cmdAllowed(g *robotsgluon.Grammar, args []string) error {
+	if len(args) != 3 {
+		return fmt.Errorf("allowed: want <robots.txt file> <agent> <url>")
+	}
+	src, err := os.ReadFile(args[0])
+	if err != nil {
+		return err
+	}
+	allowed, err := g.Allowed(src, args[1], args[2])
+	if err != nil {
+		return err
+	}
+	verdict := "ALLOWED"
+	if !allowed {
+		verdict = "DISALLOWED"
+	}
+	fmt.Printf("user-agent '%s' with URI '%s': %s\n", args[1], args[2], verdict)
+	if !allowed {
+		os.Exit(1)
 	}
 	return nil
 }
