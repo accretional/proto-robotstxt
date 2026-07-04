@@ -62,8 +62,14 @@ func fromEBNF(src []byte, name string) (*Grammar, error) {
 	stripWhitespace(gd)
 
 	return &Grammar{
-		gd:   gd,
-		opts: &metaparser.ParseOptions{TokenMatchers: Matchers()},
+		gd: gd,
+		opts: &metaparser.ParseOptions{
+			TokenMatchers: Matchers(),
+			// robots.txt has no //, /*, (* comment syntax — "#"-comments are
+			// grammar rules. Without this, a "//"-prefixed path could be
+			// silently skipped as a line comment in syntactic contexts.
+			DisableAutoComments: true,
+		},
 	}, nil
 }
 

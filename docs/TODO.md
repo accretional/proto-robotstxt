@@ -46,24 +46,18 @@ relevant `docs/progresslog/<taskname>.md` entry.
    `docs/google-dev-docs/` (common / special-case / user-triggered) are the source
    data.
 
-7. **Performance: re-pin gluon once accretional/gluon#7 merges.** The
-   ~quadratic parse scaling (6.5ms/100 lines → 43.7s/10k, Apple M4) was
-   root-caused to gluon's `astParser.loc()` rescanning from offset 0 per
-   emitted node, filed as
-   [gluon#6](https://github.com/accretional/gluon/issues/6) and FIXED in
-   [gluon PR #7](https://github.com/accretional/gluon/pull/7) (O(log n)
-   binary search over a precomputed newline index; behavior-preserving,
-   equivalence-tested upstream). Validated here via a temporary go.work:
-   10k-line robots.txt 43.7s → 105ms, linear at ~3 MB/s (see
-   docs/progresslog/benchmarks.md). After the PR merges:
-   `go get github.com/accretional/gluon@main && go mod tidy`, rerun
-   `bench/bench.sh`, record numbers in the progresslog.
+7. **Ask gluon for semver tags.** The repo now tracks gluon main via
+   pseudo-versions (see `tools/gluon/README.md`); tagged releases would make
+   go.mod human-readable and downgrades deliberate.
 
-8. **Un-pin gluon: track main instead of a side-branch pseudo-version.**
-   gluon PR #7 deliberately stacks the `xmile-gluon-cst-options` commit
-   (`ParseCSTWithOptions`/TokenMatchers — required by
-   `src-gluon/matchers.go`) with the perf fix, so merging it puts
-   everything this repo needs on gluon main. Then go.mod pins a plain main
-   pseudo-version (or a semver tag if gluon starts tagging — worth asking
-   for). gluon v2 has no separate go.mod, so `.../v2/...` imports keep
-   resolving through the root module; nothing to vendor.
+## Done
+
+- **Gluon perf + un-pin** (2026-07-04, see docs/progresslog/benchmarks.md
+  and tools/gluon/README.md): the ~quadratic parse scaling (43.7s per
+  10k-line file) was root-caused to gluon's `astParser.loc()` offset-0
+  rescan ([gluon#6](https://github.com/accretional/gluon/issues/6)), fixed
+  upstream (`3b97bbf`, 10k lines now ~105ms, linear), and the perf/bench
+  tooling merged via
+  [gluon PR #7](https://github.com/accretional/gluon/pull/7). gluon main
+  now also carries `ParseCSTWithOptions` (`8266db6`), so the side-branch
+  pin is retired — go.mod tracks main; updates via `tools/gluon/repin.sh`.

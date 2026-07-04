@@ -174,3 +174,25 @@ After: linear (10.4×/10.1× per 10×) at ~3 MB/s, allocs unchanged. The repo
 still pins the pre-fix gluon; docs/TODO.md items 7–8 track re-pinning to
 main once the PR merges. Profiling workflow is now reusable:
 `bench/profile.sh` here, `scripts/bench-parse.sh` + `PERF.md` upstream.
+
+---
+
+## Re-pinned to gluon main (2026-07-04)
+
+gluon PR #7 merged (rebased to additive-only after main independently
+landed both code fixes: 3b97bbf loc(), 8266db6 ParseCSTWithOptions); this
+repo now tracks gluon main (`117ed15`, pseudo-version
+v0.0.0-20260704042112) — see tools/gluon/README.md; updates via
+tools/gluon/repin.sh. Full bench.sh run on the real pin (Apple M4):
+
+- GluonEventsScaling: 0.99ms / 10.1ms / 102ms at 100/1k/10k lines —
+  linear, ~3.0 MB/s constant.
+- realistic-large.txt: GluonParse 1.09ms, GluonEvents 1.03ms (3.1 MB/s) —
+  now FASTER than the robots_dump subprocess round-trip (5.4ms,
+  spawn-dominated).
+- DisableAutoComments (now functional upstream) enabled in
+  src-gluon/parse.go; all suites + 15s fuzz green post-repin.
+
+Two-tier parsing primitives for gluon filed as gluon#8 (StartRule option,
+reusable Parser handle, structured/partial errors) — see
+docs/design/two-tier-parsing.md.

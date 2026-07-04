@@ -5,6 +5,14 @@ item 3; realizes the project README's goal of a **fully bijective**
 googlebot-parser implementation on top of the EBNF core, with the explicit
 constraint that **we do not deviate from the BNF formalization**.
 
+This is the first instance of the repo's general **two-tier parsing**
+pattern — [`two-tier-parsing.md`](two-tier-parsing.md) defines the pattern
+and audits gluon's support for it (short version: everything needed for the
+line-oriented case exists on gluon main today; three additive upstream
+improvements are filed as
+[gluon#8](https://github.com/accretional/gluon/issues/8), of which
+`StartRule` selection replaces the rotated-grammar workaround below).
+
 ## Problem
 
 `grammar/rep.ebnf` is a faithful formalization of RFC 9309 §2.2 (plus the

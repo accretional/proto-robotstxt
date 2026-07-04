@@ -32,10 +32,12 @@ go test -bench . -benchmem -run '^$' -timeout 60m ./bench/          # bare invoc
 go test -bench . -benchmem -run '^$' -timeout 60m -short ./bench/   # skips the subprocess benchmark
 ```
 
-Note the generous `-timeout` (bench.sh passes it automatically): while the
-engine has super-linear scaling hotspots, the `lines=10000` synthetic case
-can take minutes per iteration, and `go test`'s default 10m timeout kills
-the whole run mid-benchmark.
+The generous `-timeout` (bench.sh passes it automatically) is a holdover
+from when the engine had a quadratic scaling hotspot and `lines=10000` took
+minutes per iteration — that was gluon's O(n²) `loc()` rescan, fixed
+upstream ([gluon#6](https://github.com/accretional/gluon/issues/6), landed
+2026-07-04; ~105ms at 10k lines since). Kept as insurance so a future
+regression stalls loudly instead of killing the run mid-benchmark.
 
 Every benchmark degrades to `b.Skipf` (not a failure) when its inputs are
 missing: no `testdata/*.txt` files, grammar failing to load, or
