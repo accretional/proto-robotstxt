@@ -22,6 +22,11 @@ import "strings"
 // Allowed reports whether userAgent may fetch url per robotsTxt, using the
 // two-tier parse (total: any input yields a decision, like google). This
 // mirrors robots_main's OneAgentAllowedByRobots.
+//
+// Library caveat (THEORETICAL divergence, port-fidelity review): a NUL byte
+// inside url truncates the matched path in C++ (path.c_str() semantics,
+// robots.cc:542) but is kept here. Unreachable via either CLI (argv can't
+// carry NUL).
 func (g *Grammar) Allowed(robotsTxt []byte, userAgent, url string) (bool, error) {
 	rec, err := g.Recover(robotsTxt)
 	if err != nil {
@@ -91,7 +96,7 @@ func (m *robotsMatcher) handleUserAgent(value string) {
 	}
 	token := ExtractUserAgent(value)
 	for _, agent := range m.agents {
-		if strings.EqualFold(token, agent) {
+		if asciiEqualFold(token, agent) {
 			m.everSeenSpecific = true
 			m.seenSpecificAgent = true
 			break
@@ -226,7 +231,35 @@ func ExtractUserAgent(userAgent string) string {
 	return userAgent[:i]
 }
 
-// isCSpace mirrors C isspace() for the "'*' followed by space" check.
+// asciiEqualFold mirrors absl::EqualsIgnoreCase: byte-wise ASCII-only
+// case-insensitive equality. strings.EqualFold would additionally apply
+// Unicode simple folding (e.g. U+212A KELVIN SIGN == 'k'), letting exotic
+// caller agents match groups google never matches — found by the
+// port-fidelity review.
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		ca, cb := a[i], b[i]
+		if ca >= 'A' && ca <= 'Z' {
+			ca += 'a' - 'A'
+		}
+		if cb >= 'A' && cb <= 'Z' {
+			cb += 'a' - 'A'
+		}
+		if ca != cb {
+			return false
+		}
+	}
+	return true
+}
+
+// isCSpace mirrors C isspace() in the C locale for the "'*' followed by
+// space" check. robots.cc:626 calls locale-sensitive isspace() (UB for
+// high-bit chars); robots_main never changes locale, so the C-locale set is
+// the observable behavior — noted as a THEORETICAL divergence for embedders
+// that setlocale() to an 8-bit locale.
 func isCSpace(b byte) bool {
 	switch b {
 	case ' ', '\t', '\n', '\v', '\f', '\r':

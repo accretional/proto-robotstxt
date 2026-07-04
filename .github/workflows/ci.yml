@@ -1,0 +1,56 @@
+# CI: the same gate as local development — ./run.sh (setup -> build -> test
+# -> e2e). Network notes: the live accretional.com fetch in run.sh degrades
+# to the checked-in testdata copy when offline, and the live file is checked
+# via -recover so upstream content changes can't fail unrelated PRs; the
+# hard egress needs are the Bazel Central Registry and the Go module proxy.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 9 * * *" # nightly: longer fuzz sessions
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Cache bazel
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-${{ runner.os }}-${{ hashFiles('.bazelversion', 'MODULE.bazel') }}
+          restore-keys: bazel-${{ runner.os }}-
+      # ubuntu runners ship bazelisk; setup.sh downloads it if absent.
+      - run: ./run.sh
+
+  fuzz:
+    # Short differential fuzz on every push/PR; 5 minutes per fuzzer nightly.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Cache bazel
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-${{ runner.os }}-${{ hashFiles('.bazelversion', 'MODULE.bazel') }}
+          restore-keys: bazel-${{ runner.os }}-
+      - name: Fuzz smoke
+        env:
+          FUZZ_SMOKE: "1"
+          FUZZ_TIME: ${{ github.event_name == 'schedule' && '5m' || '30s' }}
+        run: ./test.sh
+      - name: Race check
+        run: go test -race ./src-gluon/ ./fuzz/

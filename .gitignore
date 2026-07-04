@@ -74,8 +74,10 @@ Testing/
 bazel-*
 # repo-local toolchain launchers (setup.sh --download)
 bin/
-# generated binaries/protos/artifacts (proto/rep.proto is the checked-in one)
-gen/
+# generated binaries/protos/artifacts (proto/*.proto are the checked-in ones).
+# NOTE: must be gen/* (not gen/) — git never descends into an ignored
+# directory, so a !negation for .gitkeep only works with the contents form.
+gen/*
 !gen/.gitkeep
 # RFC raw pulls (rfc-editor licensing; rerun tools/rfc/pull-rfc.sh)
 docs/rfc/*/raw.html

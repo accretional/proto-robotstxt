@@ -1,0 +1,4 @@
+a b
+user-agent: FooBot
+disallow /x
+allow /x/ok

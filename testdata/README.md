@@ -9,14 +9,17 @@ RFC 9309 EBNF/gluon parser (`src-gluon/`):
    For each of these, the google parser's parse-event stream
    (`HandleUserAgent`/`HandleAllow`/`HandleDisallow`/`HandleSitemap`/
    `HandleUnknownAction`) must equal the gluon-side compiled events.
-2. **Malformed tier** (`testdata/malformed/*.txt`): files the google
-   parser accepts/handles but which are **not** valid per the strict RFC
-   grammar. These are reserved for the future malformed-input phase and
-   for documenting parser divergences. **`malformed/` is excluded from
-   the strict cross-check suite.**
+2. **Malformed tier** (`testdata/malformed/*.txt`): files google handles
+   leniently. Most are rejected by the strict parse and exercise the
+   two-tier RECOVERY path (src-gluon/recover.go); four are actually
+   strict-parseable (`bom.txt`/`partial-bom.txt`/`no-final-newline.txt`
+   via the google-mirroring `Normalize`, `value-no-slash.txt` via the
+   documented `otherline` extension). **`malformed/` is excluded from the
+   strict cross-check suite** but fully covered by
+   `gluon check -recover` / `TestRecoverCrossGoogle`.
 
 `matcher-cases.tsv` holds (file, agent, url, expected) tuples verified
-against `robots_main`; a future matcher test consumes it. Format is
+against `robots_main`; consumed by src-gluon/matcher_test.go (TestMatcherCasesTSV). Format is
 documented in its header comment.
 
 ## Strict-tier constraints
@@ -85,8 +88,9 @@ meets the strict-tier constraints:
 
 ## Malformed tier manifest (`testdata/malformed/`)
 
-Google's parser handles all of these; the strict RFC grammar must reject
-(at least part of) each. Excluded from the strict cross-check suite.
+Google's parser handles all of these; most are rejected by the strict RFC
+grammar (four parse strictly — see the tier definition above). Excluded from
+the strict cross-check suite; covered by the recovery cross-check.
 
 | File | Exercises | Google behavior (verified via robots_main / code) |
 |---|---|---|
@@ -105,3 +109,7 @@ Google's parser handles all of these; the strict RFC grammar must reject
 Added 2026-07-04 (phase 4, docs/design/malformed-input.md):
 
 | `malformed/line-too-long.txt` | a Disallow line of ~17 KB — over google's per-line cap (`kMaxLineLen` = 2083×8 = 16664; content beyond 16663 bytes is dropped and the line flagged `is_line_too_long`) | google truncates the pattern; strict tier is bypassed in recovery (tier-1 semantics would use the untruncated value) |
+
+Added 2026-07-04 (port-fidelity review):
+
+| `malformed/vertical-tab.txt` | `\v`/`\f` after the missing-colon separator run — kWhite (`" \t"`) doesn't treat them as separators, but google re-trims the emitted value with the full absl whitespace set | caught a real event+decision divergence in the Go port (value kept the `\v`); now pinned by the recovery cross-check and `TestParseGoogleLine` |

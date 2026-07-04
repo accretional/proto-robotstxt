@@ -22,12 +22,15 @@ Read the root `README.md` first — it is the project spec. Then skim
    (`src-google/VENDOR.md`). Behavior changes belong in our layers.
 5. **Don't deviate from the BNF.** `grammar/rep.ebnf` is the RFC 9309
    formalization; google-parser leniencies (typos, missing colons, junk
-   lines) are handled OUTSIDE the grammar (events compiler, future
-   preprocessing layer — docs/TODO.md "Malformed-input handling"), never by
-   loosening the RFC core rules.
-6. `proto/rep.proto` is generated (from the grammar, via
-   `go run ./cmd/gluon genproto`) — regenerate + re-consolidate, don't
-   hand-edit. Everything else under `gen/` is git-ignored build output.
+   lines) are handled OUTSIDE the grammar (events compiler + the two-tier
+   recovery layer, src-gluon/recover.go — docs/design/malformed-input.md),
+   never by loosening the RFC core rules.
+6. `proto/rep.proto` AND `proto/recover.proto` are generated (via
+   `go run ./cmd/gluon genproto -out gen`, then re-prepend each file's
+   banner) — regenerate + re-consolidate, don't hand-edit. rep.proto is
+   grammar-derived; recover.proto's descriptor is built in
+   `src-gluon/recoverproto.go`. Everything else under `gen/` is git-ignored
+   build output.
 
 ## Layout / where things go
 
@@ -35,7 +38,8 @@ Read the root `README.md` first — it is the project spec. Then skim
 - `src-gluon/` — grammar-driven parser + events compiler (Go)
 - `grammar/rep.ebnf` — the EBNF formalization (start rule first!)
 - `proto/rep.proto` — consolidated derived proto rep
-- `cmd/gluon` — CLI (`parse` / `rep` / `events` / `check` / `genproto`)
+- `cmd/gluon` — CLI (`grammar` / `parse` / `rep` / `events` / `meta` /
+  `allowed` / `render` / `check` / `genproto`; `-recover` on rep/events/check)
 - `tools/robots-dump/` — C++ event dumper over the vendored parser
 - `tools/{rfc,google-dev}/` — docs pullers (`docs/rfc/`, `docs/google-dev-docs/`)
 - `testdata/` — strict corpus (cross-checked); `testdata/malformed/` —

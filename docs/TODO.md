@@ -4,15 +4,6 @@ Maintained project TODO list. Keep items ordered roughly by priority; when you f
 one, move it to a "Done" section at the bottom with a date and a pointer to the
 relevant `docs/progresslog/<taskname>.md` entry.
 
-1. **Aggregate ALL Google crawling/indexing docs into `docs/google-dev-docs/`.**
-   Crawl the full <https://developers.google.com/search/docs/crawling-indexing> tree
-   (and <https://developers.google.com/crawling>) — not just the 8 seed pages — via a
-   parser or an LLM pass over the output of `tools/google-dev/pull-docs.sh`. Abide by
-   CC BY 4.0 for the text (keep the attribution headers the script already emits).
-   Update the index README (`docs/google-dev-docs/README.md`) when done. One known
-   candidate page: `/crawling/docs/robots-txt/useful-robots-txt-rules` (linked from
-   the create-robots-txt page but not in the seed set).
-
 2. **Fuzzing: optional libFuzzer/C++ variant.** Structure-aware
    differential fuzzing is DONE in pure Go (2026-07-04, `FuzzStructured`:
    rep wire-byte mutation → raw render → recovery-vs-robots_dump events +
@@ -50,11 +41,41 @@ relevant `docs/progresslog/<taskname>.md` entry.
    `docs/google-dev-docs/` (common / special-case / user-triggered) are the source
    data.
 
-7. **Ask gluon for semver tags.** The repo now tracks gluon main via
+7. **Decide the scope of "fully bijective" for tier-2 documents.**
+   Deserialization-equality (events + metadata) and decision-equality
+   (matcher) are done and fuzz-proven, and `RenderRep` round-trips strict
+   reps — but there is no renderer for `RecoveredRobotstxt` (tier-2), even
+   though `RecoveredLine.text` retains the original bytes, so a
+   byte-reconstructing render-back of malformed documents is buildable if
+   wanted. Decide whether the README's "fully bijective" goal includes
+   that, and implement or explicitly close it.
+
+8. **Unmirrored google surface (port-fidelity review, 2026-07-04).**
+   Inventory of vendored behavior we neither mirror nor differential-test,
+   in rough materiality order: (a) multi-agent `AllowedByRobots` — our
+   `AllowedByEvents` accepts `[]string` but no test passes >1 agent; add
+   grid/fuzz coverage; (b) `reporting_robots.{h,cc}` (`RobotsParsedLine`,
+   unused-directive taxonomy via `kUnsupportedTags`) — a richer per-line
+   report than LineMetadata; (c) `kAllowFrequentTypos=false` mode (we
+   hardcode the shipping default); (d) `IsValidUserAgentToObey`,
+   `matching_line()`/`disallow_ignore_global()` accessors (match.line is
+   stored, unread, for a future port). Full details in
+   docs/progresslog/reviews.md.
+
+9. **Ask gluon for semver tags.** The repo now tracks gluon main via
    pseudo-versions (see `tools/gluon/README.md`); tagged releases would make
    go.mod human-readable and downgrades deliberate.
 
 ## Done
+
+- **Aggregate ALL Google crawling/indexing docs** (2026-07-03, was item 1; see
+  docs/progresslog/google-docs-aggregation.md): full doc tree enumerated by the new
+  `tools/google-dev/discover-pages.sh` (nav-link BFS, redirect-canonicalized) — 62
+  pages pulled via `tools/google-dev/pull-docs.sh` (now stdin-capable; no-arg =
+  discover + pull everything) into `docs/google-dev-docs/` with CC BY 4.0
+  attribution headers, incl. `/crawling/docs/robots-txt/useful-robots-txt-rules`.
+  Extractor hardened (devsite chrome skipped, fenced code blocks, table-cell
+  separators); categorized index rewritten in `docs/google-dev-docs/README.md`.
 
 - **Gluon perf + un-pin** (2026-07-04, see docs/progresslog/benchmarks.md
   and tools/gluon/README.md): the ~quadratic parse scaling (43.7s per

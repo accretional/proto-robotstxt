@@ -1,10 +1,13 @@
 // Package fuzz holds the fuzzing harnesses for the gluon robots.txt parser.
 //
-// Current harness: Go-native fuzzing (go test -fuzz), seeded from the
-// testdata corpus. Planned (docs/TODO.md): structure-aware differential
-// fuzzing with google/libprotobuf-mutator + libfuzzer, mutating
-// robotstxt.rep messages (proto/rep.proto), rendering them to robots.txt
-// text, and diffing the two parsers' deserializations.
+// Go-native fuzzing (go test -fuzz), seeded from the testdata corpus.
+// Six harnesses (see fuzz/README.md for the full table): strict-parser
+// invariants (FuzzParse), two-tier totality (FuzzRecover), byte-level and
+// structure-aware differentials against the real google binaries
+// (FuzzDifferential, FuzzStructured), decision parity (FuzzMatcher), and
+// renderer identity (FuzzRenderRoundTrip). Remaining optional upgrade
+// (docs/TODO.md item 2): a libFuzzer/C++ target with real
+// libprotobuf-mutator for C++-side coverage feedback.
 package fuzz
 
 import (
@@ -33,6 +36,7 @@ func addSeeds(f *testing.F) {
 	}
 	f.Add([]byte("User-agent: *\nDisallow: /\n"))
 	f.Add([]byte("\xEF\xBB\xBFUser-agent: *\r\nAllow: /a%2fb # c\r\n"))
+	f.Add([]byte("a \x0bb\ndisallow \x0c/x\n")) // \v/\f in the missing-colon path
 	f.Add([]byte(""))
 }
 

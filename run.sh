@@ -72,8 +72,13 @@ log "gluon events (google-deserialization form):"
 gen/bin/gluon events "${ROBOTS}" | sed 's/^/    /'
 
 # --- 4. cross-check both parsers agree ----------------------------------------
-log "cross-checking gluon vs google parser on ${ROBOTS} + strict testdata/"
-gen/bin/gluon check -dump gen/bin/robots_dump "${ROBOTS}" testdata/*.txt
+# The LIVE file goes through -recover (if accretional.com ever serves
+# google-lenient-but-RFC-invalid content, the gate should not fail on it);
+# the checked-in strict corpus stays on the strict path.
+log "cross-checking gluon vs google parser (live file via -recover)"
+gen/bin/gluon check -recover -dump gen/bin/robots_dump "${ROBOTS}"
+log "cross-checking strict corpus (strict tier)"
+gen/bin/gluon check -dump gen/bin/robots_dump testdata/*.txt
 
 # --- 5. two-tier recovery cross-check (strict + malformed tiers) ---------------
 log "cross-checking two-tier recovery (gluon check -recover) on BOTH corpus tiers"

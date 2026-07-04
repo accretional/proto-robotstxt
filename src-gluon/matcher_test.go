@@ -2,10 +2,12 @@ package robotsgluon
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -87,6 +89,22 @@ func TestGetPathParamsQuery(t *testing.T) {
 	}
 }
 
+// TestAgentFoldIsASCIIOnly pins absl::EqualsIgnoreCase semantics: Unicode
+// simple folding (U+212A KELVIN SIGN vs 'k') must NOT match — google's
+// comparison is byte-wise ASCII-only (port-fidelity review finding).
+func TestAgentFoldIsASCIIOnly(t *testing.T) {
+	events := []Event{
+		{Line: 1, Kind: UserAgent, Value: "k"},
+		{Line: 2, Kind: Disallow, Value: "/"},
+	}
+	if !AllowedByEvents(events, []string{"\u212A"}, "https://example.com/x") {
+		t.Error("U+212A agent matched ASCII 'k' group; must not (absl is ASCII-only)")
+	}
+	if AllowedByEvents(events, []string{"K"}, "https://example.com/x") {
+		t.Error("ASCII 'K' agent must match 'k' group case-insensitively")
+	}
+}
+
 // TestMatcherCasesTSV replays the curated (file, agent, url, expected)
 // tuples — expectations were recorded from robots_main itself
 // (testdata/matcher-cases.tsv).
@@ -146,56 +164,79 @@ func TestMatcherGridVsGoogle(t *testing.T) {
 		t.Fatal("no corpus")
 	}
 
-	checked := 0
+	var checked atomic.Int64
 	for _, f := range files {
-		src, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rec, err := g.Recover(src)
-		if err != nil {
-			t.Fatalf("%s: %v", f, err)
-		}
-
-		// Agents: every product token in the file (so specific groups
-		// engage) plus never-present and wildcard-ish agents.
-		agents := map[string]bool{"FooBot": true, "absent-bot": true}
-		// URLs: derived from every rule value (wildcards stripped for a
-		// likely match, plus suffixed/mismatched variants) plus statics.
-		urls := map[string]bool{
-			"https://example.com/":            true,
-			"https://example.com/x/unmatched": true,
-		}
-		for _, e := range rec.Events {
-			switch e.Kind {
-			case UserAgent:
-				if tok := ExtractUserAgent(e.Value); tok != "" {
-					agents[tok] = true
-				}
-			case Allow, Disallow:
-				p := strings.ReplaceAll(strings.TrimSuffix(e.Value, "$"), "*", "x")
-				if !strings.HasPrefix(p, "/") {
-					p = "/" + p
-				}
-				urls["https://example.com"+p] = true
-				urls["https://example.com"+p+"zz"] = true
+		f := f
+		name, _ := filepath.Rel("..", f)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel() // subprocess-bound; parallelism cuts ~21s to a few seconds
+			src, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-
-		for agent := range agents {
-			for url := range urls {
-				ours, err := g.Allowed(src, agent, url)
-				if err != nil {
-					t.Fatalf("%s: %v", f, err)
-				}
-				google := googleAllowed(t, robotsMain, f, agent, url)
-				if ours != google {
-					t.Errorf("%s agent=%q url=%q: gluon allowed=%v, google allowed=%v",
-						f, agent, url, ours, google)
-				}
-				checked++
+			rec, err := g.Recover(src)
+			if err != nil {
+				t.Fatalf("%s: %v", f, err)
 			}
-		}
+
+			// Agents: every product token in the file (so specific groups
+			// engage) plus never-present and wildcard-ish agents.
+			agents := map[string]bool{"FooBot": true, "absent-bot": true}
+			// URLs: derived from every rule value (wildcards stripped for a
+			// likely match, plus suffixed/mismatched variants) plus statics.
+			urls := map[string]bool{
+				"https://example.com/":            true,
+				"https://example.com/x/unmatched": true,
+			}
+			for _, e := range rec.Events {
+				switch e.Kind {
+				case UserAgent:
+					if tok := ExtractUserAgent(e.Value); tok != "" {
+						agents[tok] = true
+					}
+				case Allow, Disallow:
+					p := strings.ReplaceAll(strings.TrimSuffix(e.Value, "$"), "*", "x")
+					if !strings.HasPrefix(p, "/") {
+						p = "/" + p
+					}
+					urls["https://example.com"+p] = true
+					urls["https://example.com"+p+"zz"] = true
+				}
+			}
+
+			// Flatten the grid and shard it into parallel sub-subtests: a
+			// rule-heavy file (realistic-large.txt) yields thousands of
+			// triples, and one sequential subtest would dominate wall time.
+			type triple struct{ agent, url string }
+			var grid []triple
+			for agent := range agents {
+				for url := range urls {
+					grid = append(grid, triple{agent, url})
+				}
+			}
+			const shards = 8
+			for sh := 0; sh < shards && sh < len(grid); sh++ {
+				sh := sh
+				t.Run(fmt.Sprintf("shard%d", sh), func(t *testing.T) {
+					t.Parallel()
+					for i := sh; i < len(grid); i += shards {
+						agent, url := grid[i].agent, grid[i].url
+						ours, err := g.Allowed(src, agent, url)
+						if err != nil {
+							t.Fatalf("%s: %v", f, err)
+						}
+						google := googleAllowed(t, robotsMain, f, agent, url)
+						if ours != google {
+							t.Errorf("%s agent=%q url=%q: gluon allowed=%v, google allowed=%v",
+								f, agent, url, ours, google)
+						}
+						checked.Add(1)
+					}
+				})
+			}
+		})
 	}
-	t.Logf("checked %d (file, agent, url) triples against robots_main", checked)
+	t.Cleanup(func() {
+		t.Logf("checked %d (file, agent, url) triples against robots_main", checked.Load())
+	})
 }

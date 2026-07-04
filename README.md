@@ -5,7 +5,7 @@ Google's official robotstxt parser + EBNF Formalization per RFC 9309, and additi
 
 Vendor-in https://github.com/google/robotstxt to src-google/ and get it building + working with setup.sh, build.sh, test.sh, and run.sh (where build.sh calls setup.sh, test.sh calls build.sh, run.sh calls test.sh by default and CLAUDE.md instructs agents to ALWAYS make sure run.sh works e2e before git pushing).
 
-Set up a github.com/accretional/gluon/v2 parser against the abnf spec from https://www.rfc-editor.org/rfc/rfc9309.html#name-authors-addresses within src-gluon/ and document it in src-gluon/README.md - get it fully working e2e in a way that allows it to be used as a one-off cli
+Set up a github.com/accretional/gluon/v2 parser against the abnf spec from https://www.rfc-editor.org/rfc/rfc9309.html#name-formal-syntax within src-gluon/ and document it in src-gluon/README.md - get it fully working e2e in a way that allows it to be used as a one-off cli
 
 Once the gluon parser is working, we'll have a representation of the robots.txt grammar and structure in .proto files. Then we'll implement a small "compiler" from these .proto files to the src-google deserialized format for robots.txt and test that both parsers produce the same deserialized data across several different inputs. Once that's working we'll set up fuzz/ and use something like https://github.com/google/libprotobuf-mutator with libfuzzer to fuzz our gluon parer.
 
@@ -38,12 +38,14 @@ Binaries land in `gen/bin/`:
 ```sh
 gen/bin/robots_main <robots.txt> <agent> <url>   # google's CLI (vendored)
 gen/bin/robots_dump <robots.txt>                 # google parse-event dump
-gen/bin/gluon rep|parse|events|check|genproto …  # grammar-driven side
+gen/bin/gluon grammar|parse|rep|events|meta|allowed|render|check|genproto
+                                                 # grammar-driven side (see src-gluon/README.md)
 ```
 
 Layout: `src-google/` vendored google/robotstxt (see VENDOR.md) · `grammar/rep.ebnf`
-RFC 9309 EBNF formalization · `src-gluon/` grammar-driven parser + events
-compiler (README there explains the pipeline) · `proto/rep.proto` derived
-typed rep · `cmd/gluon` CLI · `tools/` robots-dump + docs pullers ·
+RFC 9309 EBNF formalization · `src-gluon/` grammar-driven parser, events
+compiler, two-tier recovery, matcher + renderer (README there explains the
+pipeline) · `proto/rep.proto` + `proto/recover.proto` derived typed reps ·
+`cmd/gluon` CLI · `tools/` robots-dump + docs pullers ·
 `testdata/` strict + malformed corpora · `fuzz/`, `bench/`, `docker/`,
 `docs/` (RFC + Google-docs knowledgebase, TODO, progress logs).

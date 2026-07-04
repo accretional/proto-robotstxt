@@ -193,12 +193,16 @@ func cmdMeta(args []string) error {
 }
 
 func cmdAllowed(g *robotsgluon.Grammar, args []string) error {
+	// Exit-code parity with robots_main: 0 allowed, 1 disallowed, 2 for
+	// argument/file errors (robots_main.cc returns 2 on both).
 	if len(args) != 3 {
-		return fmt.Errorf("allowed: want <robots.txt file> <agent> <url>")
+		fmt.Fprintln(os.Stderr, "gluon: allowed: want <robots.txt file> <agent> <url>")
+		os.Exit(2)
 	}
 	src, err := os.ReadFile(args[0])
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "gluon: failed to read file %q: %v\n", args[0], err)
+		os.Exit(2)
 	}
 	allowed, err := g.Allowed(src, args[1], args[2])
 	if err != nil {
@@ -209,6 +213,9 @@ func cmdAllowed(g *robotsgluon.Grammar, args []string) error {
 		verdict = "DISALLOWED"
 	}
 	fmt.Printf("user-agent '%s' with URI '%s': %s\n", args[1], args[2], verdict)
+	if len(src) == 0 {
+		fmt.Println("notice: robots file is empty so all user-agents are allowed")
+	}
 	if !allowed {
 		os.Exit(1)
 	}

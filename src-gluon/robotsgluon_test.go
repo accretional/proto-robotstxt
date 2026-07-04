@@ -3,6 +3,7 @@ package robotsgluon
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -167,4 +168,45 @@ func TestCrossGoogle(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestConcurrentGrammarUse pins that a shared *Grammar is safe for
+// concurrent use across every public entry point (the fuzzers and any
+// server-shaped consumer rely on this; run with -race for full value —
+// CI's fuzz job does). gluon builds per-call parser state and only reads
+// the shared GrammarDescriptor/TokenMatchers, but that invariant lives
+// upstream, so guard it here against gluon bumps.
+func TestConcurrentGrammarUse(t *testing.T) {
+	g := mustGrammar(t)
+	inputs := [][]byte{
+		[]byte("User-agent: *\nDisallow: /private\nSitemap: https://x.example/s.xml\n"),
+		[]byte("Dissallow /typo\nuseragent: FooBot\njunk line here\n"),
+		[]byte("\xEF\xBB\xBFUser-agent: a\r\nAllow: /caf\xC3\xA9 # c\r\n"),
+	}
+	var wg sync.WaitGroup
+	for w := 0; w < 8; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < 25; i++ {
+				src := inputs[(w+i)%len(inputs)]
+				if _, err := g.Recover(src); err != nil {
+					t.Errorf("Recover: %v", err)
+					return
+				}
+				if _, err := g.Allowed(src, "FooBot", "https://e.com/private/x"); err != nil {
+					t.Errorf("Allowed: %v", err)
+					return
+				}
+				if ast, err := g.Parse(inputs[0]); err != nil {
+					t.Errorf("Parse: %v", err)
+					return
+				} else if _, err := CSTToRep(ast); err != nil {
+					t.Errorf("CSTToRep: %v", err)
+					return
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
 }

@@ -21,4 +21,15 @@ log "bazel test //src-google:all tests"
 log "go test ./..."
 go test ./...
 
+# Optional fuzz smoke (CI nightly / pre-release): FUZZ_SMOKE=1 ./test.sh runs
+# short sessions of every differential fuzzer (needs the C++ binaries built
+# above). FUZZ_TIME overrides the per-fuzzer budget.
+if [ "${FUZZ_SMOKE:-0}" = "1" ]; then
+  ft="${FUZZ_TIME:-30s}"
+  log "fuzz smoke (${ft} per fuzzer)"
+  for fz in FuzzRecover FuzzDifferential FuzzStructured FuzzMatcher FuzzRenderRoundTrip; do
+    go test -run '^$' -fuzz "^${fz}\$" -fuzztime "${ft}" ./fuzz/
+  done
+fi
+
 log "all tests passed"

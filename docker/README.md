@@ -82,7 +82,7 @@ cache:
 * `bazel version` (downloads 9.1.1)  : ~3 s
 * C++ build + upstream tests
   (abseil + googletest from source)  : ~42 s
-* `go mod download` + `./run.sh`     : ~30 s
+* `go mod download` + `./run.sh`     : ~36 s (re-measured 2026-07-04, warm cache, full green gate)
 
 Total cold build: **~2 min** (network-dominated; budget ~5 min on slow CI
 egress). Warm rebuilds after a source-only change re-run only the last
@@ -106,20 +106,9 @@ expected for a builder image. Build context is ~300 kB thanks to
   linux/amd64,linux/arm64` works; cross-arch emulation of the Bazel/C++ build
   is slow — prefer native runners per arch.
 
-## Current status (2026-07-03)
+## Status
 
-The Go/gluon half of the repo (`src-gluon/`, `cmd/gluon`) is still being
-written by another workstream, so the default build currently fails at the
-final `./run.sh` layer inside that Go code (at the time of writing: compile
-errors in `cmd/gluon/main.go` against not-yet-written `src-gluon` symbols).
-Everything before that — toolchains, `go mod download` of the gluon module,
-and the C++ parser build with its upstream Bazel tests (2/2 pass) — is
-verified green. In the meantime use:
-
-```sh
-docker build --build-arg RUN_E2E=0 -t proto-robotstxt .
-```
-
-to get the verified toolchain + C++ image (smoke-tested: `robots_main`
-built and run inside the container against `testdata/`). Remove this section
-(and the `RUN_E2E=0` advice) when the default build goes green.
+The default build (full `./run.sh` e2e gate inside the image) is green —
+verified 2026-07-04 with the complete Go/gluon toolchain, recovery layer and
+matcher included. `RUN_E2E=0` remains available purely as a fast-path for
+toolchain/C++-only iteration.

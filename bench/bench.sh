@@ -19,9 +19,10 @@ cd "${REPO_ROOT}"
 mkdir -p gen
 OUT="gen/bench-latest.txt"
 
-# Generous -timeout: BenchmarkGluonEventsScaling/lines=10000 can take minutes
-# while the engine has super-linear hotspots. Trailing "$@" still wins for any
-# flag passed by the caller (go test uses the last occurrence).
+# Generous -timeout as regression insurance: with gluon#6 fixed the scaling
+# benchmark is fast (~102ms @ 10k lines), but a future superlinear regression
+# should stall loudly mid-benchmark rather than kill the run. Trailing "$@"
+# still wins for any flag passed by the caller (go test uses the last one).
 echo "[bench] go test -bench . -benchmem -run '^\$' -timeout 60m ./bench/ $*"
 go test -bench . -benchmem -run '^$' -timeout 60m ./bench/ "$@" | tee "${OUT}"
 

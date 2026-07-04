@@ -11,6 +11,11 @@ func TestParseGoogleLine(t *testing.T) {
 	cases := []struct{ name, line, key, value, reason string }{
 		{"missing colon", "Disallow /tmp", "Disallow", "/tmp", "missing-colon-separator"},
 		{"missing colon tabs", "Disallow\t\t/tmp", "Disallow", "/tmp", "missing-colon-separator"},
+		// \v/\f after the separator run: NOT separators for the two-token
+		// check (kWhite is " \t") but STRIPPED from the emitted value
+		// (robots.cc recomputes it with the full absl whitespace set).
+		{"missing colon vt value", "Disallow \v/tmp", "Disallow", "/tmp", "missing-colon-separator"},
+		{"missing colon ff value", "Disallow\t\f/tmp", "Disallow", "/tmp", "missing-colon-separator"},
 		{"junk multi token", "this is not a directive", "", "", "no-separator-multi-token"},
 		{"single token", "junk", "", "", "no-separator"},
 		{"empty key", ": value", "", "", "empty-key"},

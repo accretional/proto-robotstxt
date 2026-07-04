@@ -196,3 +196,10 @@ tools/gluon/repin.sh. Full bench.sh run on the real pin (Apple M4):
 Two-tier parsing primitives for gluon filed as gluon#8 (StartRule option,
 reusable Parser handle, structured/partial errors) — see
 docs/design/two-tier-parsing.md.
+
+
+---
+
+*Numbering note (2026-07-04): "TODO item 7"/"items 7–8" above refer to the
+TODO numbering at time of writing; those items have since moved to the Done
+section of docs/TODO.md and the numbers were reused.*

@@ -43,16 +43,16 @@ robots.txt bytes ──Normalize──▶ ParseCSTWithOptions(+token matchers)
   tokens — fatal for a line-oriented format. `fromEBNF` strips them; all
   spacing is explicit `ws`/`nl` grammar tokens (mirroring the ABNF's `*WS`
   and `NL`).
-- **First rule = start rule.** gluon hard-codes `Rules[0]` as the start
-  symbol; `robotstxt` must stay the first rule in rep.ebnf (enforced in
-  `fromEBNF`).
+- **First rule = default start rule.** gluon starts at `Rules[0]` unless
+  `ParseOptions.StartRule` overrides it (recovery does, per line rule);
+  `robotstxt` must stay the first rule in rep.ebnf (enforced in `fromEBNF`).
 - **Token matchers over char-by-char alternations.** gluon's keyword
   boundary check silently rejects an all-alpha terminal followed by a
   letter/digit/underscore, so enumerating letters as `"a" | "b" | …`
   misparses; character classes use ranges (`"a" ... "z"`) or matchers.
   Matchers also give us ABNF case-insensitive keys and CRLF/CR/LF newline
-  tokens. `ParseCSTWithOptions` (the matcher hook) needs gluon @ `3ab5064`+
-  (pinned in go.mod; kvq's older pin is an ancestor).
+  tokens. `ParseCSTWithOptions` (the matcher hook) needs the matcher API on
+  gluon main (`8266db6`+); the pin is managed via tools/gluon/repin.sh.
 - **Greedy `[ ]`/`{ }`, longest-match `|`, first-wins ties.** The grammar is
   written so alternation prefixes are disjoint per line kind, and RFC-core
   alternatives are listed before extension lines so ties resolve to the RFC.

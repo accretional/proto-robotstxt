@@ -68,7 +68,7 @@ ensure_go() {
   if command -v go >/dev/null 2>&1; then
     log "go present: $(go version)"
   else
-    err "go toolchain not found. Install Go >= 1.25 (https://go.dev/dl/ or 'brew install go')."
+    err "go toolchain not found. Install Go >= 1.26 (https://go.dev/dl/ or 'brew install go')."
     err "The C++ (src-google) build works without it, but src-gluon/cmd do not."
     return 1
   fi

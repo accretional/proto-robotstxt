@@ -65,3 +65,11 @@ assessment: correctness unaffected, not blocking phase 2; becomes material
 for phase-5 fuzz volume and larger grammars. Fun fact from the run:
 value-no-slash.txt actually passes tier 1 (otherline covers it), confirming
 recovery only engages where the grammar genuinely can't.
+
+
+---
+
+*Superseded names (2026-07-04, phase 2): `splitPhysicalLines`/
+`extractIrregular` were replaced by `googleLines`/`parseGoogleLine` in
+src-gluon/metadata.go, and the tests renamed accordingly
+(`TestGoogleLines`/`TestParseGoogleLine`). See two-tier-phases2-5.md.*

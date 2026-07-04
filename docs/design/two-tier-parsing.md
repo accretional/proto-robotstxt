@@ -56,7 +56,7 @@ deviations for free (our `testdata/malformed/`).
    (`ParseCSTWithOptions`) for lexical atoms, `DisableAutoComments`,
    whitespace control via the grammar lex, longest-match alternation.
 
-## Gluon today: gaps and workarounds (audited at main `117ed15`)
+## Gluon today: gaps and workarounds (audited at `117ed15`; row 1 updated after `5d4e3ca` landed)
 
 | need | gluon main today | workaround here | upstream fix (small→large) |
 |---|---|---|---|

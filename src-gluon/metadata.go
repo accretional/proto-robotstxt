@@ -131,7 +131,13 @@ func parseGoogleLine(text string) lineDirective {
 		}
 		d.meta.IsMissingColonSeparator = true
 		d.key = strings.TrimRight(line[:ws], " \t\n\v\f\r")
-		d.value = val
+		// The reject check above uses kWhite (" \t") like robots.cc:328-338,
+		// but the EMITTED value is recomputed there (robots.cc:351-352) with
+		// the FULL absl ASCII whitespace set — so a \v or \f after the
+		// separator run is stripped from the value even though it did not
+		// count as a separator. Found by the port-fidelity review; covered by
+		// testdata/malformed/vertical-tab.txt.
+		d.value = strings.Trim(line[ws+1:], " \t\n\v\f\r")
 		d.reason = "missing-colon-separator"
 	} else {
 		d.key = strings.Trim(line[:sep], " \t\n\v\f\r")

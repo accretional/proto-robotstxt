@@ -12,6 +12,8 @@ against Google's hand-rolled C++ parser (`src-google`, exercised through the
 | `BenchmarkGluonParse` | `Grammar.Parse` — full CST, materializing a complete `gluonpb.ASTDescriptor` | One sub-benchmark per `testdata/*.txt` file; `b.SetBytes` set, so MB/s is reported |
 | `BenchmarkGluonEvents` | `Grammar.Events` — the google-parser-equivalent event stream | Same corpus; this is the semantically comparable path to Google's parser |
 | `BenchmarkGoogleDump` | One `gen/bin/robots_dump` subprocess invocation per iteration | **Includes fork/exec + pipe I/O + output re-parsing**, see caveats; skipped under `-short` or if the binary isn't built |
+| `BenchmarkRecoverMalformed` | Full two-tier `Recover` per malformed-tier file (tier 2: per-line StartRule parses + fallback) | The gluon#8-item-2 before/after record — ~220µs per irregular line is per-call grammar setup |
+| `BenchmarkRecoverStrictPassthrough` | `Recover` on spec-valid input | Pins that tier 1 costs the same as a plain strict parse |
 | `BenchmarkGluonEventsScaling` | `Grammar.Events` on synthetic in-memory inputs of 100 / 1000 / 10000 lines (groups of 1 `User-agent` + 9 `Allow`/`Disallow` rules) | Isolates scaling shape from corpus idiosyncrasies |
 
 The corpus is every `testdata/*.txt` file at the repo root, discovered at

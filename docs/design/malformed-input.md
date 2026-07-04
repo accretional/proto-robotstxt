@@ -1,8 +1,8 @@
 # Design: malformed-input handling (strict BNF core + line-level recovery)
 
-Status: PHASE 1 IMPLEMENTED (2026-07-04; src-gluon/recover.go, progress log
-`docs/progresslog/two-tier-phase1.md`). Phases 2–5 open. Tracks docs/TODO.md
-item 3; realizes the project README's goal of a **fully bijective**
+Status: COMPLETE — phases 1–5 all implemented 2026-07-04 (src-gluon/, progress
+logs `docs/progresslog/two-tier-phase1.md` + `two-tier-phases2-5.md`). Tracks
+docs/TODO.md item 3; realizes the project README's goal of a **fully bijective**
 googlebot-parser implementation on top of the EBNF core, with the explicit
 constraint that **we do not deviate from the BNF formalization**.
 
@@ -115,7 +115,8 @@ type Recovered struct {
 }
 ```
 
-- `gluon parse|rep|events|check` gain `-recover`; strict remains the
+- `gluon rep|events|check` gain `-recover` (`parse` deliberately does not —
+  a recovered document has no single CST); strict remains the
   default everywhere (and the default posture of the repo).
 - `run.sh` gains a recovery cross-check:
   `gluon check -recover testdata/*.txt testdata/malformed/*.txt`.

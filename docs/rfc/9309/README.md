@@ -214,8 +214,10 @@ Source: <https://developers.google.com/search/docs/crawling-indexing/robots/robo
 
 - Crawlers SHOULD impose a parsing limit to protect themselves; the limit **MUST be at
   least 500 kibibytes (KiB)** — i.e. everything up to 500 KiB must be parsed.
-- Google enforces exactly 500 KiB and **ignores content after the limit** (so rules
-  past 512 000 bytes silently vanish — relevant for differential testing).
+- Google enforces exactly 500 KiB at FETCH time and ignores content past the
+  limit — **crawler-side policy, not parser behavior**: robots.cc itself has
+  no total-input cap (confirmed; docs/design/malformed-input.md phase 4), so
+  the limit is invisible to this repo's differential surface.
 
 ## 11. Security considerations (§3, §1)
 
@@ -239,6 +241,9 @@ robots.txt provides **no access-control guarantees**:
 - **§5.2** — longest match: with `Allow: /example/page/` and
   `Disallow: /example/page/disallowed.gif`, the URI
   `example.com/example/page/disallow.gif` MUST be matched by the disallow rule
+  (note: an RFC example typo — as literally written the rule does NOT match
+  that URI (`disallowed.gif` vs `disallow.gif`); read the URI as
+  `…/disallowed.gif`)
   (it has more octets).
 
 ## Related material in this repo
