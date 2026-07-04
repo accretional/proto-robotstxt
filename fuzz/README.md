@@ -37,9 +37,18 @@ with libFuzzer — mutates `robotstxt.rep.Robotstxt` messages
 (proto/rep.proto) instead of bytes, renders each mutant to robots.txt text,
 and feeds the SAME differential check as `FuzzDifferential`.
 
-Dependency: the rep → text renderer (docs/TODO.md item 5, the
-"generating robots.txt files" tooling) does not exist yet. Once it does,
-the cheap version is a pure-Go structured fuzzer (mutate the dynamicpb rep,
-render, reuse `FuzzDifferential`'s body); the libFuzzer/C++ version
-(cc_fuzz target on `//src-google:robots` + `@libprotobuf_mutator` from BCR)
-buys coverage-guided C++-side feedback on top.
+STATUS: the pure-Go version of this is DONE — `FuzzStructured` below uses
+the rep→text renderer (src-gluon/render.go) landed 2026-07-04. Only the
+libFuzzer/C++ variant remains optional future work.
+
+## Decision & generation fuzzers (added with the matcher + renderer)
+
+| fuzzer | invariants | speed (M4) |
+|---|---|---|
+| `FuzzMatcher` | fuzzed (robots bytes, agent, url) triples: our RobotsMatcher port and `robots_main` reach the same allow/disallow verdict | ~270 execs/s |
+| `FuzzStructured` | **structure-aware differential**: input bytes are WIRE-FORMAT `robotstxt.rep.Robotstxt` (mutating the typed rep — libprotobuf-mutator's trick, pure Go), rendered raw to text, then the same events+metadata differential as `FuzzDifferential`. Seeded from marshaled corpus reps | ~200 execs/s |
+| `FuzzRenderRoundTrip` | any decodable rep passing VALIDATING render: text parses strictly, and parse∘render is the identity from one parse in | ~10k execs/s |
+
+With these, docs/TODO.md item 2's remaining scope is only the optional
+libFuzzer/C++ variant (real libprotobuf-mutator via BCR + a cc_fuzz target
+on `//src-google:robots`) for coverage-guided feedback from the C++ side.

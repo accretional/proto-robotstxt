@@ -52,7 +52,7 @@ func TestRobotsPatternMatches(t *testing.T) {
 		{"/x/y.gift", "/*.gif", true},   // '$'-less pattern is a prefix match
 		{"/x/y.gift", "/*.gif$", false}, // anchored
 		{"/x/y.gif", "/*.gif$", true},
-		{"/", "", true},          // empty pattern matches everything
+		{"/", "", true}, // empty pattern matches everything
 		{"/a/b", "/a/*/b", false},
 		{"/a/x/b", "/a/*/b", true},
 		{"/a/b", "/a$", false},
@@ -68,16 +68,16 @@ func TestRobotsPatternMatches(t *testing.T) {
 
 func TestGetPathParamsQuery(t *testing.T) {
 	cases := map[string]string{
-		"":                                          "/",
-		"https://example.com":                       "/",
-		"https://example.com/":                      "/",
-		"https://example.com/a/b?q=1":               "/a/b?q=1",
-		"https://example.com/a#frag":                "/a",
-		"https://example.com#frag":                  "/",
-		"//example.com/x":                           "/x",
-		"example.com/x;p":                           "/x;p",
-		"https://example.com?q":                     "/?q",
-		"/already/a/path":                           "/already/a/path",
+		"":                                         "/",
+		"https://example.com":                      "/",
+		"https://example.com/":                     "/",
+		"https://example.com/a/b?q=1":              "/a/b?q=1",
+		"https://example.com/a#frag":               "/a",
+		"https://example.com#frag":                 "/",
+		"//example.com/x":                          "/x",
+		"example.com/x;p":                          "/x;p",
+		"https://example.com?q":                    "/?q",
+		"/already/a/path":                          "/already/a/path",
 		"https://example.com/San%20Jos%C3%A9/page": "/San%20Jos%C3%A9/page",
 	}
 	for url, want := range cases {

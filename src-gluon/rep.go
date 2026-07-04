@@ -269,3 +269,14 @@ func kindOfRuleKey(rule *gluonpb.ASTNode) EventKind {
 func fieldOf(md protoreflect.MessageDescriptor, name string) protoreflect.FieldDescriptor {
 	return md.Fields().ByName(protoreflect.Name(name))
 }
+
+// NewRepMessage returns an empty message of the named robotstxt.rep type
+// (e.g. "Robotstxt", "RecoveredRobotstxt") — the entry point for building
+// or unmarshaling reps from outside the package (CLI render, fuzzers).
+func NewRepMessage(name string) (*dynamicpb.Message, error) {
+	md, err := repDescriptor(name)
+	if err != nil {
+		return nil, err
+	}
+	return dynamicpb.NewMessage(md), nil
+}

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
+
 	robotsgluon "github.com/accretional/proto-robotstxt/src-gluon"
 )
 
@@ -227,6 +229,124 @@ func FuzzMatcher(f *testing.F) {
 		if ours != google {
 			t.Fatalf("DECISION divergence: robots=%q agent=%q url=%q: gluon=%v google=%v",
 				robots, agent, url, ours, google)
+		}
+	})
+}
+
+// FuzzStructured is the structure-aware differential fuzzer (docs/TODO.md
+// item 2, cheap-first-step form): the fuzz input is interpreted as WIRE
+// BYTES of a robotstxt.rep.Robotstxt message — so the mutator effectively
+// mutates the typed rep (libprotobuf-mutator's core trick) — which is then
+// RENDERED to robots.txt text (raw mode: adversarial reps produce
+// adversarial text) and put through the same recovery-vs-google
+// differential as FuzzDifferential. Seeds are the marshaled reps of the
+// strict corpus, so mutation starts from deep, valid grammar shapes.
+func FuzzStructured(f *testing.F) {
+	dump := findDumpBin()
+	if dump == "" {
+		f.Skip("robots_dump not built (run ./build.sh); skipping structured fuzz")
+	}
+	g, err := robotsgluon.Default()
+	if err != nil {
+		f.Fatalf("grammar: %v", err)
+	}
+	files, _ := filepath.Glob("../testdata/*.txt")
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		rep, err := g.Rep(data)
+		if err != nil {
+			continue
+		}
+		wire, err := proto.Marshal(rep)
+		if err != nil {
+			continue
+		}
+		f.Add(wire)
+	}
+	f.Fuzz(func(t *testing.T, wire []byte) {
+		msg, err := robotsgluon.NewRepMessage("Robotstxt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := proto.Unmarshal(wire, msg); err != nil {
+			t.Skip() // not a decodable rep — mutation landed outside the schema
+		}
+		text, err := robotsgluon.RenderRep(msg, robotsgluon.RenderOptions{})
+		if err != nil {
+			t.Skip() // unrenderable shape (e.g. empty oneof arm)
+		}
+		rec, err := g.Recover(text)
+		if err != nil {
+			t.Fatalf("Recover must be total on rendered text %q: %v", text, err)
+		}
+		path := filepath.Join(t.TempDir(), "robots.txt")
+		if err := os.WriteFile(path, text, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		google, err := robotsgluon.GoogleParse(dump, path)
+		if err != nil {
+			t.Fatalf("robots_dump on rendered %q: %v", text, err)
+		}
+		if diffs := robotsgluon.DiffEvents(rec.Events, google.Events); len(diffs) != 0 {
+			t.Fatalf("EVENT divergence on rendered %q:\n%s", text, strings.Join(diffs, "\n"))
+		}
+		if diffs := robotsgluon.DiffMetadata(rec.Metadata, google.Metadata); len(diffs) != 0 {
+			t.Fatalf("METADATA divergence on rendered %q:\n%s", text, strings.Join(diffs, "\n"))
+		}
+	})
+}
+
+// FuzzRenderRoundTrip pins render.go guarantee 1 beyond the corpus. A
+// mutated rep may hold shapes no parse produces (e.g. a top-level directive
+// AFTER a group — reparsing folds it into the group), so the invariant
+// starts one parse in: text from a validating render must parse strictly,
+// and from that point parse∘render is the identity on reps.
+func FuzzRenderRoundTrip(f *testing.F) {
+	g, err := robotsgluon.Default()
+	if err != nil {
+		f.Fatalf("grammar: %v", err)
+	}
+	files, _ := filepath.Glob("../testdata/*.txt")
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		if rep, err := g.Rep(data); err == nil {
+			if wire, err := proto.Marshal(rep); err == nil {
+				f.Add(wire)
+			}
+		}
+	}
+	f.Fuzz(func(t *testing.T, wire []byte) {
+		msg, err := robotsgluon.NewRepMessage("Robotstxt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := proto.Unmarshal(wire, msg); err != nil {
+			t.Skip()
+		}
+		text, err := robotsgluon.RenderRep(msg, robotsgluon.RenderOptions{Validate: true})
+		if err != nil {
+			t.Skip() // validation rejected the shape — allowed
+		}
+		rep2, err := g.Rep(text)
+		if err != nil {
+			t.Fatalf("validated render failed strict reparse: %v\ntext: %q", err, text)
+		}
+		text2, err := robotsgluon.RenderRep(rep2, robotsgluon.RenderOptions{Validate: true})
+		if err != nil {
+			t.Fatalf("re-render of parser-produced rep failed: %v", err)
+		}
+		rep3, err := g.Rep(text2)
+		if err != nil {
+			t.Fatalf("re-reparse failed: %v\ntext2: %q", err, text2)
+		}
+		if !proto.Equal(rep2, rep3) {
+			t.Fatalf("parse-render not identity on parser-produced rep:\nrep2: %v\nrep3: %v\ntext2: %q", rep2, rep3, text2)
 		}
 	})
 }

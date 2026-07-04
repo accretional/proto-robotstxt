@@ -55,6 +55,8 @@ func main() {
 		err = cmdMeta(args)
 	case "allowed":
 		err = cmdAllowed(g, args)
+	case "render":
+		err = cmdRender(args)
 	case "check":
 		err = cmdCheck(g, args)
 	case "genproto":
@@ -83,6 +85,9 @@ commands:
                            allow/disallow decision (RobotsMatcher port over
                            the two-tier parse); exit 0 allowed, 1 disallowed
                            — argument/exit parity with robots_main
+  render [-raw] <rep.textproto>
+                           generate robots.txt text from a Robotstxt rep
+                           (inverse of "rep"; validates fields unless -raw)
   check [-dump bin] [-recover] <f>...
                            parse each file with BOTH parsers; diff the events
   genproto [-out dir]      derive proto schema from the grammar -> rep.proto/.fdset
@@ -208,6 +213,34 @@ func cmdAllowed(g *robotsgluon.Grammar, args []string) error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+func cmdRender(args []string) error {
+	fs := flag.NewFlagSet("render", flag.ExitOnError)
+	raw := fs.Bool("raw", false, "skip field validation (emit rep bytes verbatim, even if the result won't reparse strictly)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return fmt.Errorf("render: want exactly one Robotstxt textproto file (produce one with `gluon rep`)")
+	}
+	src, err := os.ReadFile(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	msg, err := robotsgluon.NewRepMessage("Robotstxt")
+	if err != nil {
+		return err
+	}
+	if err := prototext.Unmarshal(src, msg); err != nil {
+		return fmt.Errorf("render: parse textproto: %w", err)
+	}
+	out, err := robotsgluon.RenderRep(msg, robotsgluon.RenderOptions{Validate: !*raw})
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(out)
+	return err
 }
 
 func cmdEvents(g *robotsgluon.Grammar, args []string) error {

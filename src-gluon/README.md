@@ -30,6 +30,8 @@ robots.txt bytes ──Normalize──▶ ParseCSTWithOptions(+token matchers)
 | `metadata.go` | the google-exact **line scanner**: BOM/CRLF/EOF-flush split, `kMaxLineLen` truncation, per-line `LineMetadata` (ReportLineMetadata mirror), GetKeyAndValueFrom + GetKeyType ports |
 | `recover.go` | **tier 2** (docs/design/malformed-input.md): per-line StartRule re-parse with robots.cc fallback; `Recover` is total — any bytes → events + metadata + per-line records |
 | `rep.go` | CST → typed rep message (`robotstxt.rep.Robotstxt`); schema derived from the grammar at runtime, instantiated with dynamicpb |
+| `matcher.go` | **RobotsMatcher port** over the event stream: allow/disallow decisions (group selection, longest-match precedence, wildcard matching, URL→path) — differential-proven vs robots_main |
+| `render.go` | **rep→text generator** (`RenderRep`): canonical robots.txt from a rep; Validate mode guarantees strict reparse identity, raw mode feeds the structured fuzzer |
 | `recoverproto.go` | hand-built `proto/recover.proto` descriptor (`RecoveredRobotstxt`) + `RecoveredToRep` lowering |
 | `genproto.go` | grammar → proto schema (`Genproto`), the kvq/proto-sqlite pipeline: `GrammarToAST` → `typedRepAST` → `compiler.Compile`; emits `proto/rep.proto` AND `proto/recover.proto` into one descriptor set |
 | `google.go` | runs `tools/robots-dump` (the C++ side's event+metadata printer) and diffs both streams |
@@ -79,6 +81,8 @@ gen/bin/gluon parse    file.txt          # CST textproto (strict only)
 gen/bin/gluon rep      [-recover] f.txt  # typed rep textproto (rep/recover.proto)
 gen/bin/gluon events   [-recover] f.txt  # google-form events
 gen/bin/gluon meta     file.txt          # google-form per-line metadata
+gen/bin/gluon allowed  f.txt agent url   # allow/disallow (robots_main parity)
+gen/bin/gluon render   [-raw] rep.pbtxt  # rep textproto -> robots.txt text
 gen/bin/gluon check    [-recover] f...   # gluon vs google cross-check
                                          #   (-recover: events + metadata,
                                          #    both corpus tiers must pass)

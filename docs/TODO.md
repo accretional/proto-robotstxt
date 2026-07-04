@@ -13,37 +13,35 @@ relevant `docs/progresslog/<taskname>.md` entry.
    candidate page: `/crawling/docs/robots-txt/useful-robots-txt-rules` (linked from
    the create-robots-txt page but not in the seed set).
 
-2. **Fuzzing: structure-aware mutation.** Byte-level DIFFERENTIAL fuzzing
-   exists (`FuzzDifferential`, 2026-07-04: recovery events + metadata vs the
-   real robots_dump per exec — any divergence on any bytes is a bug).
-   Remaining: structure-aware mutation à la
-   <https://github.com/google/libprotobuf-mutator> — mutate
-   `robotstxt.rep.Robotstxt` messages, render to text, reuse the same
-   differential check. BLOCKED ON item 5 (rep→text renderer). Cheap first
-   step once unblocked: pure-Go structured fuzzer over the dynamicpb rep;
-   the libFuzzer/C++ target (BCR has libprotobuf-mutator) adds
-   coverage-guided C++ feedback. See fuzz/README.md.
+2. **Fuzzing: optional libFuzzer/C++ variant.** Structure-aware
+   differential fuzzing is DONE in pure Go (2026-07-04, `FuzzStructured`:
+   rep wire-byte mutation → raw render → recovery-vs-robots_dump events +
+   metadata; plus `FuzzRenderRoundTrip` for the renderer identity).
+   Remaining (optional): the libFuzzer/C++ target with real
+   libprotobuf-mutator (BCR has it; cc_fuzz on //src-google:robots) for
+   coverage-guided feedback from the C++ side. See fuzz/README.md.
 
 3. **Malformed-input handling: COMPLETE (phases 1–5, 2026-07-04).** All
    phases of `docs/design/malformed-input.md` are done — recovery core,
    metadata bijectivity, proto/recover.proto, line-length semantics, and
-   byte-level differential fuzzing (see docs/progresslog/two-tier-phase1.md
-   and two-tier-phases2-5.md). The strict BNF core was never loosened.
-   Remaining related work lives in items 2 (structure-aware fuzzing) and 4
-   (bijective matcher).
-   Note the RFC's own `Disallow: *.gif$` example (RFC 9309 §5.1) is rejected by its
-   own ABNF (`path-pattern = "/" *UTF8-char-noctl`, §2.2) — see
-   `docs/rfc/9309/README.md` — so even "spec-level" inputs need this layer.
+   differential fuzzing (see docs/progresslog/two-tier-phase1.md and
+   two-tier-phases2-5.md). The strict BNF core was never loosened.
+   (Historical motivation: even the RFC's own `Disallow: *.gif$` example,
+   §5.1, is rejected by its own ABNF — see `docs/rfc/9309/README.md`.)
 
-4. **Bijective matcher.** Implement the allow/disallow decision logic (a
-   `RobotsMatcher` equivalent: user-agent group selection + longest-match rule
-   precedence per RFC 9309 §2.2.1–2.2.3) on top of the gluon rep, and
-   differential-test it against `src-google` `robots_main` across many
-   (robots.txt, user-agent, URL) triples.
+4. **Bijective matcher: DONE (2026-07-04).** src-gluon/matcher.go ports
+   robots.cc RobotsMatcher over the event stream (works on strict AND
+   recovered documents); proven against robots_main via matcher-cases.tsv,
+   a 3,180-triple corpus grid, and 32k fuzzed triples — zero divergences.
+   CLI `gluon allowed`; run.sh asserts live agreement. See
+   docs/progresslog/matcher-and-renderer.md.
 
-5. **Generation/modification tooling.** Tools for generating and modifying robots.txt
-   files from the proto rep (`proto/rep.proto`) — rep→text emission, edits (add/remove
-   rules, merge groups), round-trip (text→rep→text) guarantees.
+5. **Generation/modification tooling.** rep→text emission is DONE
+   (2026-07-04: `RenderRep` with Validate/raw modes, `gluon render` CLI,
+   identity + event-preservation guarantees fuzz-tested — see
+   docs/progresslog/matcher-and-renderer.md). Remaining: edit operations
+   (add/remove rules, merge groups) as thin helpers over
+   `NewRepMessage`/`RenderRep` when a consumer needs them.
 
 6. **Machine-readable Google crawler registry.** Wire the Google crawler user-agent
    data (HTTP UA strings, robots.txt user-agent tokens, crawler category, IP-range
