@@ -43,3 +43,10 @@ Always follow a bump with the full `./run.sh` gate before pushing.
   (`3b97bbf`), and the perf tooling (`117ed15`, PR #7); repo re-pinned to
   main and the branch pin retired. Details:
   docs/progresslog/benchmarks.md, docs/TODO.md Done section.
+
+- 2026-07-04 (later): gluon PR #9 (`5d4e3ca`) added
+  `ParseOptions.StartRule` (item 1 of gluon#8) — used by
+  src-gluon/recover.go for per-line recovery parsing; re-pinned via
+  repin.sh. gluon#8 items 2 (reusable Parser handle — would speed up
+  per-line recovery and fuzzing) and 3 (structured/partial errors — needed
+  for non-line-oriented two-tier formats) remain open.

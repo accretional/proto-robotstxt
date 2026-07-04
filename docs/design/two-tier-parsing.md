@@ -60,7 +60,7 @@ deviations for free (our `testdata/malformed/`).
 
 | need | gluon main today | workaround here | upstream fix (small→large) |
 |---|---|---|---|
-| (1) start-rule selection | `ParseCST[WithOptions]` hard-codes `gd.Rules[0]` (`v2/metaparser/cst.go:107`) — but `lexkit.ParseASTWithOptions` already takes `startRule`; only the v2 plumbing is missing | clone the GrammarDescriptor once per line-rule with that rule rotated to index 0 (cached at load) | add `ParseOptions.StartRule string` — ~5 lines, purely additive |
+| (1) start-rule selection | ~~hard-coded `gd.Rules[0]`~~ **LANDED**: `ParseOptions.StartRule` (gluon `5d4e3ca`, PR #9) | — (used directly by src-gluon/recover.go) | done — #8 item 1 |
 | (2) re-entrant parsing | every call re-runs `convertGrammarToV1` (pretty-print each rule to EBNF text) AND `newASTParser` re-`ParseExpr`s every rule body | acceptable for rep.ebnf (24 rules; measured ~µs/line at our scale) but wasteful at fuzzing volume and for bigger grammars | `metaparser.NewParser(gd, opts) *Parser` with prebuilt v1 grammar + Expr table; `Parser.Parse(doc, startRule)`. Medium; also removes the v2→v1 print/reparse from the hot path |
 | (3) structured errors / partial parse | errors are `fmt.Errorf` strings (`"unconsumed input at offset %d of %d"`); no typed offset, no partial-success mode | line-oriented formats don't need it (unit boundaries are known a priori) — this is why robots.txt recovery is buildable TODAY | typed `ParseError{Offset, Rule}` + `ParseOptions.AllowPartial` returning (root, consumed). Needed before two-tier works for non-line-oriented formats |
 

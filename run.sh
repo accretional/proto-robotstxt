@@ -63,4 +63,8 @@ gen/bin/gluon events "${ROBOTS}" | sed 's/^/    /'
 log "cross-checking gluon vs google parser on ${ROBOTS} + strict testdata/"
 gen/bin/gluon check -dump gen/bin/robots_dump "${ROBOTS}" testdata/*.txt
 
+# --- 5. two-tier recovery cross-check (strict + malformed tiers) ---------------
+log "cross-checking two-tier recovery (gluon check -recover) on BOTH corpus tiers"
+gen/bin/gluon check -recover -dump gen/bin/robots_dump testdata/*.txt testdata/malformed/*.txt
+
 log "e2e OK"

@@ -70,8 +70,9 @@ commands:
   grammar                  validate the grammar; print its rules
   parse <file>             parse a robots.txt; print the CST as textproto
   rep <file>               parse; print the typed rep (proto/rep.proto) as textproto
-  events <file>            parse; print google-deserialization-form events
-  check [-dump bin] <f>... parse each file with BOTH parsers; diff the events
+  events [-recover] <file> parse; print google-deserialization-form events
+  check [-dump bin] [-recover] <f>...
+                           parse each file with BOTH parsers; diff the events
   genproto [-out dir]      derive proto schema from the grammar -> rep.proto/.fdset
 `)
 }
@@ -145,16 +146,30 @@ func cmdRep(g *robotsgluon.Grammar, args []string) error {
 }
 
 func cmdEvents(g *robotsgluon.Grammar, args []string) error {
-	if len(args) != 1 {
+	fs := flag.NewFlagSet("events", flag.ExitOnError)
+	recover := fs.Bool("recover", false, "two-tier parse: fall back to line-level recovery when the strict parse fails (docs/design/malformed-input.md)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
 		return fmt.Errorf("events: want exactly one file argument")
 	}
-	src, err := os.ReadFile(args[0])
+	src, err := os.ReadFile(fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	events, err := g.Events(src)
-	if err != nil {
-		return err
+	var events []robotsgluon.Event
+	if *recover {
+		rec, err := g.Recover(src)
+		if err != nil {
+			return err
+		}
+		events = rec.Events
+		fmt.Fprintln(os.Stderr, "gluon:", rec.RecoverSummary())
+	} else {
+		if events, err = g.Events(src); err != nil {
+			return err
+		}
 	}
 	for _, e := range events {
 		fmt.Println(e)
@@ -165,6 +180,7 @@ func cmdEvents(g *robotsgluon.Grammar, args []string) error {
 func cmdCheck(g *robotsgluon.Grammar, args []string) error {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
 	dump := fs.String("dump", defaultDumpBin(), "path to the robots_dump binary (tools/robots-dump)")
+	recover := fs.Bool("recover", false, "two-tier parse: strict files must still cross-check, and files the strict grammar rejects are recovered line-by-line and cross-checked too")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -182,24 +198,36 @@ func cmdCheck(g *robotsgluon.Grammar, args []string) error {
 		if err != nil {
 			return err
 		}
-		gluonEvents, err := g.Events(src)
-		if err != nil {
-			fmt.Printf("PARSE-ERROR %-40s %v\n", f, err)
-			failures++
-			continue
+		var gluonEvents []robotsgluon.Event
+		tier := ""
+		if *recover {
+			rec, err := g.Recover(src)
+			if err != nil {
+				return fmt.Errorf("check %s: %w", f, err)
+			}
+			gluonEvents = rec.Events
+			if rec.Strict == nil {
+				tier = " (recovered)"
+			}
+		} else {
+			if gluonEvents, err = g.Events(src); err != nil {
+				fmt.Printf("PARSE-ERROR %-40s %v\n", f, err)
+				failures++
+				continue
+			}
 		}
 		googleEvents, err := robotsgluon.GoogleEvents(*dump, f)
 		if err != nil {
 			return fmt.Errorf("check %s: %w", f, err)
 		}
 		if diffs := robotsgluon.DiffEvents(gluonEvents, googleEvents); len(diffs) > 0 {
-			fmt.Printf("MISMATCH    %-40s %d event(s) differ\n", f, len(diffs))
+			fmt.Printf("MISMATCH    %-40s %d event(s) differ%s\n", f, len(diffs), tier)
 			for _, d := range diffs {
 				fmt.Printf("            %s\n", d)
 			}
 			failures++
 		} else {
-			fmt.Printf("PASS        %-40s %d event(s) agree\n", f, len(gluonEvents))
+			fmt.Printf("PASS        %-40s %d event(s) agree%s\n", f, len(gluonEvents), tier)
 		}
 	}
 	if failures > 0 {

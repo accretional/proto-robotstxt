@@ -1,17 +1,18 @@
 # Design: malformed-input handling (strict BNF core + line-level recovery)
 
-Status: PROPOSED (2026-07-03). Owner: next parser task. Tracks docs/TODO.md
+Status: PHASE 1 IMPLEMENTED (2026-07-04; src-gluon/recover.go, progress log
+`docs/progresslog/two-tier-phase1.md`). Phases 2–5 open. Tracks docs/TODO.md
 item 3; realizes the project README's goal of a **fully bijective**
 googlebot-parser implementation on top of the EBNF core, with the explicit
 constraint that **we do not deviate from the BNF formalization**.
 
 This is the first instance of the repo's general **two-tier parsing**
 pattern — [`two-tier-parsing.md`](two-tier-parsing.md) defines the pattern
-and audits gluon's support for it (short version: everything needed for the
-line-oriented case exists on gluon main today; three additive upstream
-improvements are filed as
-[gluon#8](https://github.com/accretional/gluon/issues/8), of which
-`StartRule` selection replaces the rotated-grammar workaround below).
+and audits gluon's support for it. The `ParseOptions.StartRule` primitive
+this design needs landed upstream before implementation started
+([gluon#8](https://github.com/accretional/gluon/issues/8) item 1, gluon
+`5d4e3ca`), so the rotated-grammar workaround described in early drafts was
+never built.
 
 ## Problem
 
@@ -75,11 +76,11 @@ Key properties:
 - **Tier 1 unchanged.** A BNF-valid file never touches recovery; the strict
   path stays the proof that the formalization is sufficient for valid input.
 - **Tier 2 reuses the grammar.** Step 2 parses each line against the *same*
-  rules in rep.ebnf — gluon hard-codes `Rules[0]` as the start symbol, so we
-  clone the GrammarDescriptor once per line-rule with that rule rotated to
-  the front (cheap, done once at load, cached on `Grammar`). The BNF stays
-  the single source of truth; recovery only adds *fallback*, never overrides
-  (a line that parses strictly is always taken as its strict parse).
+  rules in rep.ebnf via gluon's `ParseOptions.StartRule` (landed upstream as
+  gluon#8 item 1 for exactly this). The BNF stays the single source of
+  truth; recovery only adds *fallback*, never overrides (a line that parses
+  strictly is always taken as its strict parse — rule order:
+  startgroupline, rule, sitemapline, otherline, emptyline).
 - **Irregular lines mirror robots.cc exactly.** Step 3 is a small, totally
   line-local port: comment strip at first `#`, ASCII trim, `strchr ':'`,
   else whitespace separator iff exactly two token runs, empty-key ⇒ no
@@ -138,11 +139,16 @@ Reason reason}`.)
 
 ## Phases
 
-1. **Recovery core.** Line splitter + per-line strict-rule fallback +
-   GetKeyAndValueFrom port + event assembly + `-recover` flags.
-   *Acceptance:* `gluon check -recover` passes on **both** corpus tiers
-   (events identical to robots_dump for every file in `testdata/` AND
-   `testdata/malformed/`); strict-tier tests unchanged.
+1. **Recovery core.** ✅ DONE 2026-07-04. Line splitter + per-line
+   strict-rule fallback + GetKeyAndValueFrom port + event assembly +
+   `-recover` on `gluon events`/`gluon check` + `FuzzRecover` (totality +
+   tier-1-shadowing invariants) + run.sh gate step 5.
+   *Acceptance met:* `gluon check -recover` and `TestRecoverCrossGoogle`
+   pass on **both** corpus tiers (events identical to robots_dump for every
+   file in `testdata/` AND `testdata/malformed/`); strict-tier tests
+   unchanged. Notes: `parse -recover`/`rep -recover` deferred to phase 3
+   (no single CST exists for a recovered doc); LineResult.Reason carries
+   the phase-2 metadata seed.
 2. **Metadata bijectivity.** Extend tools/robots-dump to also emit
    `ReportLineMetadata` records; mirror them in recovery; extend
    `DiffEvents` to a `DiffParse` covering events + metadata.

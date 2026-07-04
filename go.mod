@@ -3,7 +3,7 @@ module github.com/accretional/proto-robotstxt
 go 1.26.2
 
 require (
-	github.com/accretional/gluon v0.0.0-20260704042112-117ed159ccfd
+	github.com/accretional/gluon v0.0.0-20260704050006-5d4e3ca98391
 	github.com/jhump/protoreflect/v2 v2.0.0-beta.1
 	google.golang.org/protobuf v1.36.11
 )

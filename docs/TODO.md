@@ -19,12 +19,13 @@ relevant `docs/progresslog/<taskname>.md` entry.
    against the vendored google parser (`src-google/`) — same input, compare
    parse/match results.
 
-3. **Malformed-input handling for the gluon parser.** RFC-invalid lines currently fail
-   strict parsing (e.g. missing colon `Disallow /x`, user-agent values with spaces,
-   junk lines). DESIGN AGREED: two-tier parse with line-level recovery — see
-   `docs/design/malformed-input.md` for the full plan, phases, and acceptance
-   criteria (strict BNF core untouched; per-line fallback ports robots.cc
-   GetKeyAndValueFrom; `-recover` CLI flags; both corpus tiers must cross-check).
+3. **Malformed-input handling: phases 2–5.** Phase 1 (recovery core:
+   `Grammar.Recover`, `-recover` CLI, both corpus tiers cross-checking
+   google — see docs/progresslog/two-tier-phase1.md) is DONE 2026-07-04.
+   Remaining per `docs/design/malformed-input.md`: metadata bijectivity
+   (extend robots_dump with ReportLineMetadata), proto/recover.proto +
+   `rep -recover`, line-too-long (2083×8) truncation semantics, and
+   flipping differential fuzzing to target Recover.
    Note the RFC's own `Disallow: *.gif$` example (RFC 9309 §5.1) is rejected by its
    own ABNF (`path-pattern = "/" *UTF8-char-noctl`, §2.2) — see
    `docs/rfc/9309/README.md` — so even "spec-level" inputs need this layer.

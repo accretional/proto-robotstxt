@@ -106,9 +106,16 @@ func compile(ast *gluonpb.ASTDescriptor, norm []byte) ([]Event, error) {
 	return events, nil
 }
 
-// lineEvent lowers one directive-line CST node to its handler callback.
+// lineEvent lowers one directive-line CST node to its handler callback,
+// resolving the line number from the node's offset.
 func lineEvent(n *gluonpb.ASTNode, lines *lineIndex) (Event, error) {
-	line := lines.at(n.GetLocation().GetOffset())
+	return lineEventAt(n, lines.at(n.GetLocation().GetOffset()))
+}
+
+// lineEventAt lowers a directive-line CST node with a known line number —
+// the recovery path (recover.go) parses one physical line at a time, so
+// node offsets are line-local and the caller supplies the real line number.
+func lineEventAt(n *gluonpb.ASTNode, line int32) (Event, error) {
 	switch n.GetKind() {
 	case "startgroupline":
 		// HandleUserAgent(line, product-token). Never escaped (robots.cc

@@ -1,5 +1,5 @@
-github.com/accretional/gluon v0.0.0-20260704042112-117ed159ccfd h1:u9yXr0DdS3Ux9QJYvFMol2WYte4Hn5qWktnr4kY7go4=
-github.com/accretional/gluon v0.0.0-20260704042112-117ed159ccfd/go.mod h1:Toz4b30ab3PTYfHSgOGVnVqLCY9/IX0klMnD1ymapHk=
+github.com/accretional/gluon v0.0.0-20260704050006-5d4e3ca98391 h1:aZNBE99lyTNPOvfNngGuIwrUdqj7FjtF41TQgadGFXA=
+github.com/accretional/gluon v0.0.0-20260704050006-5d4e3ca98391/go.mod h1:Toz4b30ab3PTYfHSgOGVnVqLCY9/IX0klMnD1ymapHk=
 github.com/accretional/proto-expr v0.0.0-20260416071217-9a69001c59bb h1:uKNLnADRuvKJTjxxAwVZl1FMULS92QOJJc2ShliBx+o=
 github.com/accretional/proto-expr v0.0.0-20260416071217-9a69001c59bb/go.mod h1:2gXKUaqtmJpgtbaN6+82/NvK4Ztmr3WGy++HQLlvop8=
 github.com/bufbuild/protocompile v0.14.1 h1:iA73zAf/fyljNjQKwYzUHD6AD4R8KMasmwa/FBatYVw=

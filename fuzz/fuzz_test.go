@@ -55,12 +55,45 @@ func FuzzParse(f *testing.F) {
 		if err != nil {
 			t.Fatalf("accepted input failed CST->events: %v\ninput: %q", err, data)
 		}
-		last := int32(0)
-		for _, e := range events {
-			if e.Line <= 0 || e.Line < last {
-				t.Fatalf("event lines not positive/ordered: %v\ninput: %q", events, data)
+		assertEventOrder(t, events, data)
+	})
+}
+
+// FuzzRecover asserts the two-tier parse is total: every byte sequence
+// yields a Recovered without error or panic; events stay ordered; and when
+// the strict tier accepted the input, recovery's events are byte-identical
+// to the strict pipeline's (tier 2 must never shadow tier 1).
+func FuzzRecover(f *testing.F) {
+	addSeeds(f)
+	g, err := robotsgluon.Default()
+	if err != nil {
+		f.Fatalf("grammar: %v", err)
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		rec, err := g.Recover(data)
+		if err != nil {
+			t.Fatalf("Recover must be total, failed on %q: %v", data, err)
+		}
+		assertEventOrder(t, rec.Events, data)
+		if rec.Strict != nil {
+			strict, err := g.Events(data)
+			if err != nil {
+				t.Fatalf("tier-1 success but Events failed on %q: %v", data, err)
 			}
-			last = e.Line
+			if diffs := robotsgluon.DiffEvents(rec.Events, strict); len(diffs) != 0 {
+				t.Fatalf("recover-vs-strict divergence on %q: %v", data, diffs)
+			}
 		}
 	})
+}
+
+func assertEventOrder(t *testing.T, events []robotsgluon.Event, data []byte) {
+	t.Helper()
+	last := int32(0)
+	for _, e := range events {
+		if e.Line <= 0 || e.Line < last {
+			t.Fatalf("event lines not positive/ordered: %v\ninput: %q", events, data)
+		}
+		last = e.Line
+	}
 }
