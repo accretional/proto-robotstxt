@@ -1,0 +1,4 @@
+User-agent: colonlessbot
+Disallow /tmp
+Allow /tmp/ok
+Disallow: /also-normal

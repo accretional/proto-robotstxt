@@ -1,0 +1,25 @@
+# Group 1: foobot and barbot share one set of rules.
+User-agent: foobot
+User-agent: barbot
+Disallow: /private/
+Allow: /private/public-note
+
+# Group 2: foobot appears a second time. The matcher merges this group
+# with group 1 for foobot; barbot is unaffected by these rules.
+User-agent: foobot
+Disallow: /tmp/
+
+# quxbot has no rules of its own. Because only blank/comment lines
+# separate it from the next user-agent line, it MERGES with the
+# catch-all group below (google matcher behavior, consistent with a
+# greedy reading of the RFC ABNF): quxbot IS subject to /secret/.
+User-agent: quxbot
+
+# Catch-all group for everyone not matched above.
+User-agent: *
+Disallow: /secret/
+
+# True empty group: at end of file, nothing can merge into it, so
+# emptybot has no rules and unrestricted access (the '*' group does
+# not apply because a specific group for emptybot exists).
+User-agent: emptybot

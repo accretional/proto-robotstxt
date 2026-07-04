@@ -1,0 +1,21 @@
+# Matcher expectation cases, verified against bazel-bin/src-google/robots_main
+# (google/robotstxt vendored in src-google/) on 2026-07-03.
+# Format: file<TAB>agent<TAB>url<TAB>expected  where expected is allowed|disallowed
+# and file is relative to the testdata/ directory.
+# Reproduce: bazel-bin/src-google/robots_main testdata/<file> <agent> <url>
+#            (exit code 0 = allowed, 1 = disallowed)
+groups-merging.txt	foobot	https://example.com/private/x	disallowed
+groups-merging.txt	foobot	https://example.com/tmp/x	disallowed
+groups-merging.txt	barbot	https://example.com/tmp/x	allowed
+groups-merging.txt	quxbot	https://example.com/secret/x	disallowed
+groups-merging.txt	emptybot	https://example.com/secret/x	allowed
+groups-merging.txt	foobot	https://example.com/private/public-note	allowed
+rfc-example.txt	foobot	https://example.com/example/page.html	allowed
+rfc-example.txt	somebot	https://example.com/path.gif	disallowed
+case-variation.txt	FOOBOT	https://example.com/uppercase-keys/x	disallowed
+percent-encoding-utf8.txt	fetcher	https://example.com/San%20Jos%C3%A9/private/x	disallowed
+crlf-endings.txt	crlfbot	https://example.com/windows/public	allowed
+cr-endings.txt	crbot	https://example.com/classic-mac/x	disallowed
+malformed/key-typos.txt	typobot	https://example.com/typo-one/x	disallowed
+malformed/agent-digits.txt	bot123	https://example.com/digits-blocked/x	allowed
+malformed/agent-digits.txt	bot	https://example.com/digits-blocked/x	disallowed

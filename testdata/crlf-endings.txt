@@ -1,0 +1,5 @@
+User-agent: crlfbot
+Disallow: /windows
+Allow: /windows/public
+
+Sitemap: https://example.com/crlf-sitemap.xml

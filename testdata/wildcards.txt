@@ -1,0 +1,12 @@
+User-agent: wildbot
+Disallow: /*.gif$
+Disallow: /foo*bar$
+Allow: /foo*barbaz
+Disallow: /*/private/*
+Allow: /fish*.php
+Disallow: /*?sessionid=
+Allow: /$
+
+User-agent: *
+Disallow: /*.json$
+Allow: /api/*.json$

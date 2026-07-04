@@ -1,0 +1,5 @@
+User-agent: junkbot
+thisisjunkwithnoseparator
+Disallow: /junk-blocked/
+three token junk line
+random junkvalue

@@ -1,0 +1,9 @@
+User-agent: fetcher
+Allow: /San%20José
+Allow: /%aa
+Disallow: /San%20Jos%C3%A9/private
+Disallow: /日本語/
+Allow: /emoji-🦊
+Disallow: /%2fdouble%2Fslash
+Allow: /100%
+Disallow: /mixed%e2%82%aceuro

@@ -18,3 +18,32 @@ In general prefer to test against accretional.com/robots.txt
 Ultimately our goal will be to have a fully bijective implementation of the googlebot parser, but using our ebnf parsing impl. To do so we'll likely need to add special handling for eg malformed input (we can try eg shifting past the malformed section and rerunning on any data before it that is not yet fully parsed up to the malforemd part? Or we can try preprocessing the input by converting it into a well-formed structure - not sure yet). But it's important that we don't deviate from the BNF formalization.
 
 We prob also want google crawling docs/utils in here too eg https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers
+
+## Getting started
+
+```sh
+./run.sh          # full gate: setup -> build -> test -> live e2e demo
+```
+
+`run.sh` calls `test.sh`, which calls `build.sh`, which calls `setup.sh`
+(idempotent; installs bazelisk if needed and warms the Go module cache).
+The gate builds the vendored google parser (`//src-google:...`, Bazel) and
+the gluon toolchain (Go), runs upstream's C++ tests, the Go tests — including
+the cross-parser conformance suite over `testdata/` — and finishes by parsing
+https://accretional.com/robots.txt live with both parsers and diffing their
+deserializations. Agents: `./run.sh` must pass before any push (CLAUDE.md).
+
+Binaries land in `gen/bin/`:
+
+```sh
+gen/bin/robots_main <robots.txt> <agent> <url>   # google's CLI (vendored)
+gen/bin/robots_dump <robots.txt>                 # google parse-event dump
+gen/bin/gluon rep|parse|events|check|genproto …  # grammar-driven side
+```
+
+Layout: `src-google/` vendored google/robotstxt (see VENDOR.md) · `grammar/rep.ebnf`
+RFC 9309 EBNF formalization · `src-gluon/` grammar-driven parser + events
+compiler (README there explains the pipeline) · `proto/rep.proto` derived
+typed rep · `cmd/gluon` CLI · `tools/` robots-dump + docs pullers ·
+`testdata/` strict + malformed corpora · `fuzz/`, `bench/`, `docker/`,
+`docs/` (RFC + Google-docs knowledgebase, TODO, progress logs).

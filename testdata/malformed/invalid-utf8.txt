@@ -1,0 +1,4 @@
+User-agent: badutfbot
+Disallow: /café-latin-one
+Allow: /ÿþ-bytes
+Disallow: /overlong-À¯

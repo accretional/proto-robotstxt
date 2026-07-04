@@ -1,0 +1,19 @@
+# Bazel module for proto-robotstxt (bzlmod).
+#
+# Drives the C++ build of the vendored google/robotstxt parser (src-google/)
+# and its tests. Dependency versions mirror upstream robotstxt's MODULE.bazel
+# at the vendored commit (see src-google/VENDOR.md), minus `emsdk`: we do not
+# build the upstream WASM target, so we skip the (very large) emscripten
+# toolchain download.
+#
+# All deps resolve from the Bazel Central Registry — no system protoc/absl is
+# required; setup.sh only needs to provide a bazel/bazelisk launcher.
+module(
+    name = "proto_robotstxt",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "abseil-cpp", version = "20260107.1")
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2")
+bazel_dep(name = "rules_cc", version = "0.2.17")

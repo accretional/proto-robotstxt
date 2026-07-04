@@ -1,0 +1,16 @@
+# Full-line comment at the top of the file.
+## Double-hash comment, still one comment.
+#comment with no space after the hash
+User-agent: commentbot # trailing comment after the agent token
+# A comment-only line between the group start and its rules.
+Disallow: /a # trailing comment after a rule value
+Allow: /a/b#hash-immediately-after-value-starts-a-comment
+Disallow: /c#
+#
+Allow: /d	# comment preceded by a tab
+   # indented comment-only line
+
+# Comment before a second group.
+User-agent: otherbot#comment-touching-the-agent-token
+Disallow: /e
+# Final comment line, no trailing newline issues here.

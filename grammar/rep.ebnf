@@ -1,0 +1,171 @@
+(* ============================================================================
+   rep.ebnf — EBNF formalization of the Robots Exclusion Protocol, RFC 9309.
+
+   Source of truth: the ABNF in RFC 9309 §2.2
+   (https://www.rfc-editor.org/rfc/rfc9309.html; local summary in
+   docs/rfc/9309/README.md). Each rule below carries its RFC ABNF original in
+   a comment. The dialect is the ISO/IEC 14977 subset accepted by gluon v2's
+   metaparser (github.com/accretional/gluon/v2/metaparser):
+
+     rule = expr ;      definition "=", terminator ";"
+     a , b              concatenation (explicit comma)
+     a | b              alternation (longest match wins; first wins ties)
+     [ a ]  { a }       optional / zero-or-more repetition (greedy, PEG-like)
+     ( a )              grouping
+     "x"                terminal (case-SENSITIVE, no escapes)
+     "a" ... "z"        single-character range (inclusive)
+     (* comment *)
+
+   LEXICAL ATOMS: ISO 14977 cannot express ABNF's case-insensitive string
+   literals (RFC 5234 §2.3), %xNN character classes over control characters,
+   or multi-byte UTF-8 byte patterns. Rules marked "token matcher" below are
+   declared with an empty body and implemented by a registered Go matcher
+   (src-gluon/matchers.go, via metaparser.ParseCSTWithOptions) that implements
+   EXACTLY the ABNF quoted in the rule's comment. This is the moral equivalent
+   of ISO 14977's special-sequence "? ... ?" form, which gluon does not parse.
+
+   PARSING MODEL: robots.txt is line-oriented, so this grammar is parsed with
+   NO implicit whitespace skipping (the grammar's lex is stripped of
+   WHITESPACE symbols and every production runs in lexical mode). All spacing
+   is explicit: `ws` (1*(SP/HTAB)) and `nl` (CR / LF / CRLF) tokens.
+
+   INPUT CANONICALIZATION (mirrors google/robotstxt robots.cc, see
+   src-gluon/README.md): before parsing, a UTF-8 BOM prefix is stripped and a
+   final newline is appended when the input is non-empty and does not already
+   end in CR or LF. Google's parser does exactly both (robots.cc Parse():
+   BOM skip; EOF acts as a line terminator).
+
+   EXTENSIONS: RFC 9309 §2.2.4 explicitly invites additional line types
+   ("parser implementors: define additional lines you need (for example,
+   Sitemaps)"). The rules under "EXTENSION LINES" below adopt that invitation
+   so that real-world files (e.g. accretional.com/robots.txt, which carries a
+   Sitemap line) and unknown key:value directives parse. They are clearly
+   fenced off from the RFC core and never override it: within every
+   alternation the RFC core alternative is listed first and wins ties, and
+   `other_key` REJECTS user-agent-like keys so extension lines can never
+   swallow a group boundary.
+
+   Deliberately NOT accepted (google's parser tolerates these; handling them
+   without deviating from this BNF is future work — see docs/TODO.md
+   "Malformed-input handling"): lines missing the ":" separator, user-agent
+   values that are not a single RFC product-token (e.g. spaces or digits:
+   "Example Bot/1.0"), user-agent-like keys that are not exactly
+   "user-agent" (e.g. the "useragent" / "user agent" typos), junk lines, and
+   invalid UTF-8 anywhere.
+   ========================================================================= *)
+
+(* ---- RFC 9309 §2.2 core ------------------------------------------------- *)
+
+(* ABNF: robotstxt = *(group / emptyline)
+   `sitemapline | otherline` appear per the §2.2.4 extension invitation, so
+   ungrouped non-user-agent lines (google: stray rules, unknown directives)
+   still parse; the compiler layer classifies them (src-gluon/events.go). *)
+robotstxt = { group | emptyline | sitemapline | otherline } ;
+
+(* ABNF: group = startgroupline                ; We start with a user-agent
+                 *(startgroupline / emptyline) ; ... and possibly more
+                                               ; user-agent lines
+                 *(rule / emptyline)           ; followed by rules relevant
+                                               ; for the preceding
+                                               ; user-agent lines
+   `sitemapline | otherline` in the rule loop per §2.2.4: google's parser
+   does not end a group at a sitemap/unknown line (sitemaps are global,
+   unknown lines are reported and skipped). *)
+group = startgroupline ,
+        { startgroupline | emptyline } ,
+        { rule | emptyline | sitemapline | otherline } ;
+
+(* ABNF: startgroupline = *WS "user-agent" *WS ":" *WS product-token EOL *)
+startgroupline = [ ws ] , useragent_key , [ ws ] , ":" , [ ws ] ,
+                 product_token , eol ;
+
+(* ABNF: rule = *WS ("allow" / "disallow") *WS ":"
+                *WS (path-pattern / empty-pattern) EOL
+   empty-pattern = *WS is covered by `[ path_pattern ]` plus eol's `[ ws ]`. *)
+rule = [ ws ] , rule_key , [ ws ] , ":" , [ ws ] , [ path_pattern ] , eol ;
+
+rule_key = allow_key | disallow_key ;
+
+(* ABNF: product-token = identifier / "*" *)
+product_token = identifier | "*" ;
+
+(* ABNF: path-pattern = "/" *UTF8-char-noctl ; valid URI path pattern *)
+path_pattern = "/" , { utf8_char_noctl } ;
+
+(* ABNF: identifier = 1*(%x2D / %x41-5A / %x5F / %x61-7A)
+   i.e. one or more of "-" / A-Z / "_" / a-z — note: NO digits. *)
+identifier = id_char , { id_char } ;
+id_char = "-" | "_" | "A" ... "Z" | "a" ... "z" ;
+
+(* ABNF: comment = "#" *(UTF8-char-noctl / WS / "#") *)
+comment = "#" , { comment_char } ;
+
+(* ABNF: emptyline = EOL *)
+emptyline = eol ;
+
+(* ABNF: EOL = *WS [comment] NL ; end-of-line, optional trailing comment *)
+eol = [ ws ] , [ comment ] , nl ;
+
+(* ---- EXTENSION LINES (RFC 9309 §2.2.4 invitation) ------------------------ *)
+
+(* Sitemap line, the RFC's own example of an extension. Shaped like the core
+   lines: *WS key *WS ":" *WS value EOL. *)
+sitemapline = [ ws ] , sitemap_key , [ ws ] , ":" , [ ws ] , [ any_value ] , eol ;
+
+(* Any other "key : value" line (google: HandleUnknownAction, plus its
+   tolerated allow/disallow typos and out-of-grammar rule values such as the
+   RFC §5.2 example "Disallow: *.gif$", which violates path-pattern's leading
+   "/"). `other_key` rejects user-agent-like keys — see its matcher. *)
+otherline = [ ws ] , other_key , [ ws ] , ":" , [ ws ] , [ any_value ] , eol ;
+
+(* ---- LEXICAL ATOMS (token matchers — src-gluon/matchers.go) -------------- *)
+
+(* ABNF: WS = %x20 / %x09 — here as 1*(%x20 / %x09); the grammar always
+   wraps ws in [ ] where the ABNF says *WS. token matcher. *)
+ws = ;
+
+(* ABNF: NL = %x0D / %x0A / %x0D.0A — longest match (CRLF first). token
+   matcher (a literal newline cannot be written inside an EBNF terminal). *)
+nl = ;
+
+(* ABNF: "user-agent" — RFC 5234 §2.3: quoted ABNF strings are
+   CASE-INSENSITIVE. token matcher. *)
+useragent_key = ;
+
+(* ABNF: "allow" / "disallow" — case-insensitive. token matchers. *)
+allow_key = ;
+disallow_key = ;
+
+(* Extension: "sitemap", case-insensitive (RFC 9309 §2.2.4 example;
+   https://www.sitemaps.org/protocol.html#submit_robots). token matcher. *)
+sitemap_key = ;
+
+(* ABNF: UTF8-char-noctl = UTF8-1-noctl / UTF8-2 / UTF8-3 / UTF8-4
+         UTF8-1-noctl    = %x21 / %x22 / %x24-7F
+         UTF8-2          = %xC2-DF UTF8-tail
+         UTF8-3          = %xE0 %xA0-BF UTF8-tail / %xE1-EC 2UTF8-tail /
+                           %xED %x80-9F UTF8-tail / %xEE-EF 2UTF8-tail
+         UTF8-4          = %xF0 %x90-BF 2UTF8-tail / %xF1-F3 3UTF8-tail /
+                           %xF4 %x80-8F 2UTF8-tail
+         UTF8-tail       = %x80-BF
+   One non-control UTF-8 character: excludes C0 controls, DEL is ALLOWED
+   (%x24-7F includes %x7F), excludes SP (%x20) and "#" (%x23). Multi-byte
+   exactly per RFC 3629 (no overlongs, no surrogates, max U+10FFFF). token
+   matcher. *)
+utf8_char_noctl = ;
+
+(* ABNF (comment body): UTF8-char-noctl / WS / "#". token matcher. *)
+comment_char = ;
+
+(* Extension: key of an unknown directive — a non-empty run of
+   UTF8-char-noctl / WS characters up to (not including) ":", right-trimmed
+   of WS, that is NOT user-agent-like (case-insensitive prefixes
+   "user-agent" / "useragent" / "user agent" are rejected so group structure
+   is preserved; those google-tolerated typo forms are future malformed-input
+   work). token matcher. *)
+other_key = ;
+
+(* Extension: value of a sitemap/unknown line — a non-empty run of
+   UTF8-char-noctl / WS characters (no "#": that starts the trailing
+   comment), right-trimmed of WS. token matcher. *)
+any_value = ;

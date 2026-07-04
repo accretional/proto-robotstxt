@@ -1,0 +1,127 @@
+# robots.txt for https://wiki.example.org/
+#
+# This file is modeled on large real-world robots.txt files
+# (wikipedia.org / google.com style), constrained to be strictly
+# valid per the RFC 9309 ABNF: product tokens contain only
+# [A-Za-z_-], every rule value starts with "/", no spaces inside
+# paths, and every line ends with a newline.
+#
+# Please crawl responsibly.
+
+# Advertising-related crawlers.
+User-agent: Mediapartners-Google
+Disallow: /
+
+User-agent: AdsBot-Google
+Disallow: /ads/
+Allow: /ads/public/
+
+# Archivers get almost everything.
+User-agent: ia_archiver
+Allow: /
+Disallow: /cgi-bin/
+
+# SEO crawlers that are known to be aggressive.
+User-agent: AhrefsBot
+User-agent: SemrushBot
+User-agent: dotbot
+Crawl-delay: 10
+Disallow: /
+
+# Wget-like recursive downloaders.
+User-agent: wget
+User-agent: HTTrack
+User-agent: WebCopier
+Disallow: /
+
+# A crawler observed to fetch too fast; throttled but not blocked.
+User-agent: fastbot
+Crawl-delay: 5
+Disallow: /w/
+Disallow: /api/
+Allow: /api/rest_v-one/
+
+# Search engine crawlers: mostly allowed.
+User-agent: Googlebot
+Disallow: /search
+Disallow: /index.html$
+Allow: /search/about
+Allow: /search/howsearchworks
+Disallow: /groups
+Disallow: /imgres
+Allow: /profiles
+Disallow: /profiles/me
+Allow: /maps/reserve
+Disallow: /maps/reserve/api/
+Disallow: /*?*&preview=
+Disallow: /*?*&rct=j
+
+User-agent: Googlebot-Image
+Disallow: /images/private/
+Allow: /images/
+
+User-agent: bingbot
+User-agent: Slurp
+User-agent: DuckDuckBot
+Disallow: /search
+Disallow: /special/
+Allow: /special/statistics
+
+# Wikipedia-style namespace exclusions for everyone.
+User-agent: *
+Allow: /w/api.php?action=mobileview&
+Allow: /w/load.php?
+Allow: /api/rest_v-one/?doc
+Disallow: /w/
+Disallow: /api/
+Disallow: /trap/
+Disallow: /wiki/Special:
+Disallow: /wiki/Spezial:
+Disallow: /wiki/Special%3A
+Disallow: /wiki/Spezial%3A
+# Folders that are dynamically generated.
+Disallow: /wiki/MediaWiki:
+Disallow: /wiki/MediaWiki_talk:
+Disallow: /wiki/Template:
+Disallow: /wiki/Template_talk:
+# Deletion and arbitration pages change constantly.
+Disallow: /wiki/Wikipedia:Articles_for_deletion
+Disallow: /wiki/Wikipedia:Miscellany_for_deletion
+Disallow: /wiki/Wikipedia:Arbitration/
+Disallow: /wiki/Wikipedia:Requests_for_arbitration/
+# Sensitive dynamic endpoints.
+Disallow: /catalogs
+Allow: /catalogs/about
+Allow: /catalogs/p?
+Disallow: /catalogues
+Disallow: /purchases
+Disallow: /local/cars
+Disallow: /local/cars/
+Disallow: /local/dining
+Disallow: /local/dealership
+Disallow: /shopping/product/
+Disallow: /shopping/seller
+Disallow: /shopping/ratings/account/metrics
+Disallow: /store/scripts/
+Disallow: /store/usd
+Disallow: /travel/clk
+Disallow: /travel/hotelier/terms/
+Disallow: /books?*q=*
+Disallow: /settings/ads
+Allow: /settings/ads/preferences/widget
+Disallow: /preferences
+Disallow: /setprefs
+Disallow: /default
+Disallow: /url?sa=
+Allow: /url?sa=t
+Disallow: /photos/private/
+Allow: /photos/
+# Trailing-wildcard and anchor patterns.
+Disallow: /*.kml$
+Disallow: /*.kmz$
+Disallow: /*/print$
+Allow: /alerts/manage
+
+Sitemap: https://wiki.example.org/sitemap.xml
+Sitemap: https://wiki.example.org/sitemap-images.xml
+Sitemap: https://wiki.example.org/sitemap-news.xml

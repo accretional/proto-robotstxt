@@ -1,0 +1,84 @@
+// proto/rep.proto — the consolidated typed representation of robots.txt,
+// DERIVED FROM grammar/rep.ebnf (the RFC 9309 EBNF formalization) by gluon
+// v2's grammar->proto compiler.
+//
+//   DO NOT EDIT by hand. Regenerate with:  go run ./cmd/gluon genproto -out gen
+//   then re-consolidate:                   see docs/progresslog/bootstrap.md
+//
+// The derivation (src-gluon/genproto.go typedRepAST) drops data-free
+// structure (ws/nl/eol/comments/emptylines/":" separators/constant keys),
+// lowers lexical value rules (product_token, path_pattern, other_key,
+// any_value) to proto3 strings, and keeps allow/disallow as oneof marker
+// messages. Field/message names follow the grammar's rule names, so this
+// file reads 1:1 against grammar/rep.ebnf and RFC 9309 §2.2.
+syntax = "proto3";
+
+package robotstxt.rep;
+
+option go_package = "github.com/accretional/proto-robotstxt/gen/reppb;reppb";
+
+message Robotstxt {
+  repeated .robotstxt.rep.Robotstxt.Alt1 alt1 = 1;
+
+  message Alt1 {
+    oneof value {
+      .robotstxt.rep.Group group = 1;
+
+      .robotstxt.rep.Sitemapline sitemapline = 2;
+
+      .robotstxt.rep.Otherline otherline = 3;
+    }
+  }
+}
+
+message Group {
+  .robotstxt.rep.Startgroupline startgroupline = 1;
+
+  repeated .robotstxt.rep.Startgroupline startgroupline_2 = 2;
+
+  repeated .robotstxt.rep.Group.Alt1 alt1 = 3;
+
+  message Alt1 {
+    oneof value {
+      .robotstxt.rep.Rule rule = 1;
+
+      .robotstxt.rep.Sitemapline sitemapline = 2;
+
+      .robotstxt.rep.Otherline otherline = 3;
+    }
+  }
+}
+
+message Startgroupline {
+  string product_token = 1;
+}
+
+message Rule {
+  .robotstxt.rep.RuleKey rule_key = 1;
+
+  string path_pattern = 2;
+}
+
+message RuleKey {
+  oneof value {
+    .robotstxt.rep.AllowKeyword allow_keyword = 1;
+
+    .robotstxt.rep.DisallowKeyword disallow_keyword = 2;
+  }
+}
+
+message Sitemapline {
+  string any_value = 1;
+}
+
+message Otherline {
+  string other_key = 1;
+
+  string any_value = 2;
+}
+
+message AllowKeyword {
+}
+
+message DisallowKeyword {
+}

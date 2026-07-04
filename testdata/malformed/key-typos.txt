@@ -1,0 +1,17 @@
+useragent: typobot
+Dissallow: /typo-one/
+Disalow: /typo-two/
+Dissalow: /typo-three/
+Diasllow: /typo-four/
+Disallaw: /typo-five/
+
+user agent: secondbot
+Dissallow: /typo-six/
+
+site-map: https://example.com/typo-sitemap.xml
+
+# google matches keys by case-insensitive PREFIX, so these also count
+# as user-agent / disallow / allow respectively:
+user-agents-are-fun: prefixbot
+Disallowing: /prefix-key-disallow/
+Allowed: /prefix-key-disallow/but-allowed

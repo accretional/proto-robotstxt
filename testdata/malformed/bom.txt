@@ -1,0 +1,3 @@
+﻿User-agent: bombot
+Disallow: /bom-blocked/
+Allow: /bom-blocked/ok

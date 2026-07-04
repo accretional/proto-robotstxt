@@ -1,0 +1,5 @@
+User-agent: Example Bot/1.0
+Disallow: /example-blocked/
+
+User-agent: *
+Disallow: /fallback-blocked/

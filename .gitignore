@@ -24,8 +24,9 @@
 *.so.*
 
 
-# Fortran module files
+# Fortran module files (but never Go's go.mod)
 *.mod
+!go.mod
 *.smod
 
 # Compiled Static libraries
@@ -67,3 +68,19 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# --- proto-robotstxt additions ---
+# Bazel
+bazel-*
+# repo-local toolchain launchers (setup.sh --download)
+bin/
+# generated binaries/protos/artifacts (proto/rep.proto is the checked-in one)
+gen/
+!gen/.gitkeep
+# RFC raw pulls (rfc-editor licensing; rerun tools/rfc/pull-rfc.sh)
+docs/rfc/*/raw.html
+docs/rfc/*/raw.txt
+# Google dev docs raw HTML (rerun tools/google-dev/pull-docs.sh)
+docs/google-dev-docs/rawhtml/
+# Go
+*.test

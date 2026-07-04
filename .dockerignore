@@ -1,0 +1,29 @@
+# Keep the docker build context small. See docker/README.md.
+
+# VCS
+.git
+
+# Bazel output symlinks / host caches (the container builds its own)
+bazel-*
+
+# repo-local toolchain launchers (setup.sh downloads these on the host)
+bin/
+
+# generated artifacts — rebuilt inside the container
+gen/**
+!gen/.gitkeep
+
+# bulky pulled docs (size/licensing; re-pull via tools/*/pull-*.sh)
+docs/google-dev-docs/rawhtml/
+docs/rfc/*/raw.*
+
+# docker files themselves aren't needed inside the image
+Dockerfile
+.dockerignore
+docker/
+
+# misc build junk
+**/.DS_Store
+*.log
+*.tmp
+*.test

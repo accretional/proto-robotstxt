@@ -1,0 +1,8 @@
+User-agent: emptybot
+Disallow:
+Allow: /
+
+User-agent: blankbot
+Disallow: 
+Allow:
+Disallow: /blocked

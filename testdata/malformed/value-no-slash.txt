@@ -1,0 +1,4 @@
+User-agent: noslashbot
+Disallow: *.gif$
+Allow: example
+Disallow: ?query=

@@ -1,0 +1,14 @@
+USER-AGENT: FooBot
+DISALLOW: /uppercase-keys/
+ALLOW: /uppercase-keys/ok
+
+user-agent: BARBOT
+disallow: /lowercase-keys/
+allow: /lowercase-keys/ok
+
+User-Agent: MiXeDBoT
+Disallow: /mixed-keys/
+Allow: /mixed-keys/ok
+
+uSeR-aGeNt: quxbot
+dIsAlLoW: /ransom-note-keys/

@@ -1,0 +1,2 @@
+ï»User-agent: partialbombot
+Disallow: /partial-bom-blocked/

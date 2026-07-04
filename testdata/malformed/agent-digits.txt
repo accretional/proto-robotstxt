@@ -1,0 +1,5 @@
+User-agent: bot123
+Disallow: /digits-blocked/
+
+User-agent: v2bot
+Disallow: /v-two-blocked/

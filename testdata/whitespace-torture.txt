@@ -1,0 +1,9 @@
+	User-agent: leadingtabbot
+   User-agent	:	tabbedbot
+Disallow	: /tab-before-colon	
+Allow :	/space-before-colon
+   Disallow:      /many-spaces-around   
+Allow:/no-space-after-colon
+	 	
+User-agent: trailingbot   
+		Disallow		:		/double-tabs		
