@@ -40,17 +40,20 @@ func repDescriptor(name string) (protoreflect.MessageDescriptor, error) {
 			repSchema.err = fmt.Errorf("unmarshal rep fdset: %w", err)
 			return
 		}
-		fd, err := protodesc.NewFile(set.GetFile()[0], nil)
+		files, err := protodesc.NewFiles(&set)
 		if err != nil {
 			repSchema.err = fmt.Errorf("protodesc: %w", err)
 			return
 		}
 		repSchema.types = map[string]protoreflect.MessageDescriptor{}
-		msgs := fd.Messages()
-		for i := 0; i < msgs.Len(); i++ {
-			m := msgs.Get(i)
-			repSchema.types[string(m.Name())] = m
-		}
+		files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+			msgs := fd.Messages()
+			for i := 0; i < msgs.Len(); i++ {
+				m := msgs.Get(i)
+				repSchema.types[string(m.Name())] = m
+			}
+			return true
+		})
 	})
 	if repSchema.err != nil {
 		return nil, repSchema.err

@@ -268,3 +268,44 @@ func TestRecoverTooLongLine(t *testing.T) {
 		t.Error("line 2 not flagged too-long")
 	}
 }
+
+// TestRecoveredToRep pins the phase-3 lowering (proto/recover.proto) for
+// both tiers.
+func TestRecoveredToRep(t *testing.T) {
+	g := mustGrammar(t)
+
+	// Strict tier: embeds the grammar-derived Robotstxt.
+	rec, err := g.Recover([]byte("User-agent: *\nAllow: /\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := RecoveredToRep(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txt := msg.String()
+	for _, want := range []string{"strict:", "product_token", "metadata:"} {
+		if !strings.Contains(txt, want) {
+			t.Errorf("strict rep missing %q:\n%s", want, txt)
+		}
+	}
+
+	// Recovery tier: per-line records with directive extraction.
+	rec, err = g.Recover([]byte("Dissallow /x\n\xFFjunk junk junk\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err = RecoveredToRep(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txt = msg.String()
+	for _, want := range []string{"Dissallow", `kind:"DISALLOW"`, "irregular:true", "is_missing_colon_separator:true"} {
+		if !strings.Contains(txt, want) {
+			t.Errorf("recovered rep missing %q:\n%s", want, txt)
+		}
+	}
+	if strings.Contains(txt, "strict:") {
+		t.Errorf("tier-2 rep should not embed strict message:\n%s", txt)
+	}
+}

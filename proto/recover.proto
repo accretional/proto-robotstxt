@@ -1,0 +1,67 @@
+// proto/recover.proto — the typed representation of a TWO-TIER parse result
+// (docs/design/malformed-input.md phase 3, docs/design/two-tier-parsing.md).
+//
+//   DO NOT EDIT by hand. The descriptor is built in
+//   src-gluon/recoverproto.go (it mirrors LineResult/LineMetadata, which
+//   mirror robots.cc); regenerate this rendering with:
+//     go run ./cmd/gluon genproto -out gen
+//   then re-prepend this banner onto gen/recover.proto.
+//
+// Unlike proto/rep.proto (purely grammar-derived), these shapes describe
+// what happens when a document leaves RFC 9309: RecoveredRobotstxt embeds
+// the grammar rep for the strict tier, per-line records for the recovery
+// tier (bytes fields — recovered lines can carry arbitrary bytes), and
+// google's ReportLineMetadata stream (robots.h field order) for both.
+syntax = "proto3";
+
+package robotstxt.rep;
+
+import "rep.proto";
+
+message RecoveredRobotstxt {
+  .robotstxt.rep.Robotstxt strict = 1;
+
+  repeated .robotstxt.rep.RecoveredLine lines = 2;
+
+  repeated .robotstxt.rep.LineMetadata metadata = 3;
+}
+
+message RecoveredLine {
+  int32 line = 1;
+
+  bytes text = 2;
+
+  string rule = 3;
+
+  bool irregular = 4;
+
+  string reason = 5;
+
+  .robotstxt.rep.IrregularDirective directive = 6;
+}
+
+message IrregularDirective {
+  bytes key = 1;
+
+  bytes value = 2;
+
+  string kind = 3;
+}
+
+message LineMetadata {
+  int32 line = 1;
+
+  bool is_empty = 2;
+
+  bool has_comment = 3;
+
+  bool is_comment = 4;
+
+  bool has_directive = 5;
+
+  bool is_acceptable_typo = 6;
+
+  bool is_line_too_long = 7;
+
+  bool is_missing_colon_separator = 8;
+}

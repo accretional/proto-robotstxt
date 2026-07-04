@@ -27,6 +27,7 @@ import (
 	"github.com/jhump/protoreflect/v2/protoprint"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 
 	"github.com/accretional/gluon/v2/compiler"
@@ -64,11 +65,14 @@ type GenprotoOptions struct {
 	GoPackage string // go_package option ("" = omit)
 }
 
-// GenprotoResult is the derived schema in both machine and human form.
+// GenprotoResult is the derived schema in both machine and human form. The
+// descriptor set holds two files: rep.proto (grammar-derived) and
+// recover.proto (hand-built two-tier shapes wrapping it — recoverproto.go).
 type GenprotoResult struct {
-	ProtoSrc   string // rendered .proto source
-	FdsetBytes []byte // wire-format FileDescriptorSet
-	Messages   int
+	ProtoSrc        string // rendered rep.proto source
+	RecoverProtoSrc string // rendered recover.proto source
+	FdsetBytes      []byte // wire-format FileDescriptorSet (both files)
+	Messages        int
 }
 
 // Genproto derives the typed proto schema from the grammar.
@@ -92,16 +96,32 @@ func Genproto(grammarPath string, opts GenprotoOptions) (*GenprotoResult, error)
 		return nil, fmt.Errorf("compiler.Compile: %w", err)
 	}
 
-	set := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{fdp}}
+	recoverFdp := recoverFileDescriptor(opts.Package)
+	set := &descriptorpb.FileDescriptorSet{
+		File: []*descriptorpb.FileDescriptorProto{fdp, recoverFdp},
+	}
 	blob, err := proto.Marshal(set)
 	if err != nil {
 		return nil, fmt.Errorf("marshal fdset: %w", err)
 	}
-	src, err := renderProto(fdp)
+	files, err := protodesc.NewFiles(set)
+	if err != nil {
+		return nil, fmt.Errorf("protodesc.NewFiles: %w", err)
+	}
+	src, err := renderProtoFile(files, "rep.proto")
 	if err != nil {
 		return nil, err
 	}
-	return &GenprotoResult{ProtoSrc: src, FdsetBytes: blob, Messages: len(fdp.GetMessageType())}, nil
+	recoverSrc, err := renderProtoFile(files, "recover.proto")
+	if err != nil {
+		return nil, err
+	}
+	return &GenprotoResult{
+		ProtoSrc:        src,
+		RecoverProtoSrc: recoverSrc,
+		FdsetBytes:      blob,
+		Messages:        len(fdp.GetMessageType()) + len(recoverFdp.GetMessageType()),
+	}, nil
 }
 
 // droppedRules are grammar rules that carry no data in the typed rep.
@@ -200,18 +220,18 @@ func rewriteExpr(n *gluonpb.ASTNode) *gluonpb.ASTNode {
 	}
 }
 
-// renderProto prints a FileDescriptorProto as .proto source.
-// ForceFullyQualifiedNames mirrors kvq's genproto: bare relative names can
-// re-resolve against nested wrapper messages and change meaning.
-func renderProto(fdp *descriptorpb.FileDescriptorProto) (string, error) {
-	fd, err := protodesc.NewFile(fdp, nil)
+// renderProtoFile prints one file from a resolved registry as .proto
+// source. ForceFullyQualifiedNames mirrors kvq's genproto: bare relative
+// names can re-resolve against nested wrapper messages and change meaning.
+func renderProtoFile(files *protoregistry.Files, path string) (string, error) {
+	fd, err := files.FindFileByPath(path)
 	if err != nil {
-		return "", fmt.Errorf("protodesc.NewFile: %w", err)
+		return "", fmt.Errorf("find %s: %w", path, err)
 	}
 	p := protoprint.Printer{ForceFullyQualifiedNames: true}
 	var b strings.Builder
 	if err := p.PrintProtoFile(fd, &b); err != nil {
-		return "", fmt.Errorf("PrintProtoFile: %w", err)
+		return "", fmt.Errorf("PrintProtoFile %s: %w", path, err)
 	}
 	return b.String(), nil
 }

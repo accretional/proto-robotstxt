@@ -159,8 +159,12 @@ Reason reason}`.)
    `TestRecoverCrossGoogle` compare them. `gluon meta` prints the stream.
    *Acceptance met:* metadata byte-equal across both corpus tiers,
    including google's phantom EOF record and `is_acceptable_typo` flags.
-3. **Typed rep for recovery.** `proto/recover.proto` + `Recovered → proto`
-   lowering; `gluon rep -recover` prints it.
+3. **Typed rep for recovery.** ✅ DONE 2026-07-04. `proto/recover.proto`
+   (checked-in; descriptor hand-built in src-gluon/recoverproto.go and
+   emitted into the same descriptor set as the grammar-derived rep.proto —
+   `gluon genproto` now writes both); `RecoveredToRep` lowers via
+   dynamicpb; `gluon rep -recover` prints it. Text/key/value fields are
+   `bytes` (recovered lines can carry arbitrary non-UTF-8 bytes).
 4. **Size/limit semantics.** ✅ DONE 2026-07-04 (folded into the phase-2
    line scanner). `googleLines` ports the cap exactly: content beyond
    `kMaxLineLen-1` (= 2083×8−1 = 16663) bytes is dropped and the line

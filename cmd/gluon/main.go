@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/types/dynamicpb"
 
 	robotsgluon "github.com/accretional/proto-robotstxt/src-gluon"
 )
@@ -71,7 +72,8 @@ func usage() {
 commands:
   grammar                  validate the grammar; print its rules
   parse <file>             parse a robots.txt; print the CST as textproto
-  rep <file>               parse; print the typed rep (proto/rep.proto) as textproto
+  rep [-recover] <file>    parse; print the typed rep as textproto
+                           (proto/rep.proto; -recover: proto/recover.proto)
   events [-recover] <file> parse; print google-deserialization-form events
   meta <file>              print the per-line metadata stream (google
                            ReportLineMetadata form; pure line-local pass)
@@ -130,18 +132,34 @@ func cmdParse(g *robotsgluon.Grammar, args []string) error {
 }
 
 func cmdRep(g *robotsgluon.Grammar, args []string) error {
-	if len(args) != 1 {
+	fs := flag.NewFlagSet("rep", flag.ExitOnError)
+	recover := fs.Bool("recover", false, "two-tier parse: print a RecoveredRobotstxt (proto/recover.proto) instead of requiring a strict parse")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
 		return fmt.Errorf("rep: want exactly one file argument")
 	}
-	src, err := os.ReadFile(args[0])
+	src, err := os.ReadFile(fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	rep, err := g.Rep(src)
-	if err != nil {
-		return err
+	var msg *dynamicpb.Message
+	if *recover {
+		rec, err := g.Recover(src)
+		if err != nil {
+			return err
+		}
+		if msg, err = robotsgluon.RecoveredToRep(rec); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "gluon:", rec.RecoverSummary())
+	} else {
+		if msg, err = g.Rep(src); err != nil {
+			return err
+		}
 	}
-	out, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(rep)
+	out, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(msg)
 	if err != nil {
 		return err
 	}
@@ -302,14 +320,19 @@ func cmdGenproto(grammarPath string, args []string) error {
 		return err
 	}
 	protoOut := filepath.Join(*out, "rep.proto")
+	recoverOut := filepath.Join(*out, "recover.proto")
 	fdsetOut := filepath.Join(*out, "rep.fdset")
 	if err := os.WriteFile(protoOut, []byte(res.ProtoSrc), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(recoverOut, []byte(res.RecoverProtoSrc), 0o644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(fdsetOut, res.FdsetBytes, 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("genproto: %d message(s) -> %s, %s\n", res.Messages, protoOut, fdsetOut)
+	fmt.Printf("genproto: %d message(s) -> %s, %s, %s\n", res.Messages, protoOut, recoverOut, fdsetOut)
 	fmt.Println(strings.TrimRight(res.ProtoSrc, "\n"))
+	fmt.Println(strings.TrimRight(res.RecoverProtoSrc, "\n"))
 	return nil
 }
