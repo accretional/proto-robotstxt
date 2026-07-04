@@ -153,3 +153,24 @@ not parsing; per-byte C++ throughput only shows on realistic-large
 The quadratic `Events` scaling finding was root-caused to upstream gluon
 (`astParser.loc()` rescans from offset 0 per node; longest-match alternation
 re-parses all alternatives) and filed as docs/TODO.md item 7.
+
+---
+
+## Upstream fix validated (bootstrap agent, 2026-07-03, later same day)
+
+The quadratic scaling was fixed in gluon (issue
+https://github.com/accretional/gluon/issues/6, PR
+https://github.com/accretional/gluon/pull/7 — `loc()` now binary-searches a
+precomputed newline index; equivalence-tested upstream). Validated against
+the local gluon checkout via a temporary go.work (Apple M4, -benchtime=2x):
+
+| BenchmarkGluonEventsScaling | pinned gluon (before) | patched gluon (after) |
+|---|---|---|
+| lines=100 | 6.5 ms | 0.90 ms |
+| lines=1000 | 425 ms | 10.4 ms |
+| lines=10000 | 43.7 s | 105 ms |
+
+After: linear (10.4×/10.1× per 10×) at ~3 MB/s, allocs unchanged. The repo
+still pins the pre-fix gluon; docs/TODO.md items 7–8 track re-pinning to
+main once the PR merges. Profiling workflow is now reusable:
+`bench/profile.sh` here, `scripts/bench-parse.sh` + `PERF.md` upstream.

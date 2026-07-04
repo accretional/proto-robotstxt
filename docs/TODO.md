@@ -21,10 +21,10 @@ relevant `docs/progresslog/<taskname>.md` entry.
 
 3. **Malformed-input handling for the gluon parser.** RFC-invalid lines currently fail
    strict parsing (e.g. missing colon `Disallow /x`, user-agent values with spaces,
-   junk lines). Design a preprocessing/recovery layer so the parser accepts everything
-   google's parser accepts WITHOUT changing the faithful BNF core. Options per the
-   project README: (a) shift past the malformed section and reparse the not-yet-parsed
-   data before it, or (b) preprocess the input into a well-formed structure first.
+   junk lines). DESIGN AGREED: two-tier parse with line-level recovery — see
+   `docs/design/malformed-input.md` for the full plan, phases, and acceptance
+   criteria (strict BNF core untouched; per-line fallback ports robots.cc
+   GetKeyAndValueFrom; `-recover` CLI flags; both corpus tiers must cross-check).
    Note the RFC's own `Disallow: *.gif$` example (RFC 9309 §5.1) is rejected by its
    own ABNF (`path-pattern = "/" *UTF8-char-noctl`, §2.2) — see
    `docs/rfc/9309/README.md` — so even "spec-level" inputs need this layer.
@@ -46,14 +46,24 @@ relevant `docs/progresslog/<taskname>.md` entry.
    `docs/google-dev-docs/` (common / special-case / user-triggered) are the source
    data.
 
-7. **Performance: gluon parse path is ~quadratic in line count.**
-   `bench/` scaling runs show `Grammar.Events` at 6.5ms/100 lines,
-   425ms/1k, 43.7s/10k (Apple M4) — see docs/progresslog/benchmarks.md.
-   Root causes in upstream gluon (pinned dep, not our code):
-   `lexkit/parse_ast.go` `astParser.loc()` recomputes line/column by
-   scanning from offset 0 for every emitted node, and longest-match
-   alternation re-parses every alternative. Fix upstream (memoized line
-   index keyed on offset; possibly memoized production results) or wrap
-   locally. Matters for real-world files: google's parser must handle
-   500 KiB (RFC 9309 §2.5); the C++ side does ~0.6 MB/s vs our current
-   ~0.02 MB/s on large inputs.
+7. **Performance: re-pin gluon once accretional/gluon#7 merges.** The
+   ~quadratic parse scaling (6.5ms/100 lines → 43.7s/10k, Apple M4) was
+   root-caused to gluon's `astParser.loc()` rescanning from offset 0 per
+   emitted node, filed as
+   [gluon#6](https://github.com/accretional/gluon/issues/6) and FIXED in
+   [gluon PR #7](https://github.com/accretional/gluon/pull/7) (O(log n)
+   binary search over a precomputed newline index; behavior-preserving,
+   equivalence-tested upstream). Validated here via a temporary go.work:
+   10k-line robots.txt 43.7s → 105ms, linear at ~3 MB/s (see
+   docs/progresslog/benchmarks.md). After the PR merges:
+   `go get github.com/accretional/gluon@main && go mod tidy`, rerun
+   `bench/bench.sh`, record numbers in the progresslog.
+
+8. **Un-pin gluon: track main instead of a side-branch pseudo-version.**
+   gluon PR #7 deliberately stacks the `xmile-gluon-cst-options` commit
+   (`ParseCSTWithOptions`/TokenMatchers — required by
+   `src-gluon/matchers.go`) with the perf fix, so merging it puts
+   everything this repo needs on gluon main. Then go.mod pins a plain main
+   pseudo-version (or a semver tag if gluon starts tagging — worth asking
+   for). gluon v2 has no separate go.mod, so `.../v2/...` imports keep
+   resolving through the root module; nothing to vendor.

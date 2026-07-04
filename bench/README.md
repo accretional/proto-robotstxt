@@ -96,3 +96,38 @@ and never compare single runs — use `-count` + benchstat.
 Raw output of the latest run is kept at `gen/bench-latest.txt` (git-ignored).
 When recording milestone numbers, copy them into
 `docs/progresslog/benchmarks.md` with the date, machine, and commit hash.
+
+## Profiling (finding out WHY a benchmark is slow)
+
+`bench/profile.sh` wraps the workflow that found gluon's O(n²) `loc()`
+rescan (accretional/gluon#6, fixed in PR #7):
+
+```sh
+bench/profile.sh                          # CPU-profile the 1000-line scaling bench
+bench/profile.sh -l 'astParser.loc'       # + line-level cost of one function
+bench/profile.sh -b 'GluonParse' -t 5x    # any benchmark regex / benchtime
+```
+
+Methodology (also documented grammar-agnostically in gluon's `PERF.md`,
+which ships the same harness for any .ebnf):
+
+1. **Detect** with scaling ratios, not absolute numbers: the
+   `GluonEventsScaling` sub-benchmarks grow input 10× per step, so ~10×
+   time is linear; 30×+ is superlinear; ~100× is quadratic. Allocations
+   growing linearly while time grows quadratically = a CPU-side rescan
+   (cost per node × scan length), not an allocation problem.
+2. **Localize** with a short profile: pick a size where the slowdown is
+   pronounced but one iteration stays around a second (1,000 lines,
+   `-benchtime=2x` — pprof needs ~1s of samples, not minutes), then read
+   `go tool pprof -top`. One dominant *flat* frame is the culprit
+   (`loc()` was 62% flat at 1k lines).
+3. **Confirm** at line level with `pprof -list <func>`, fix, and re-run the
+   scaling suite: the fix is real when the ratios return to ~10× AND
+   `allocs/op` is unchanged (behavior-preserving) — see
+   docs/progresslog/benchmarks.md for the before/after record.
+
+Note: profiles taken in *this* repo attribute time to the gluon version
+pinned in go.mod. To profile a local gluon checkout (e.g. to validate a fix
+before it merges), add a temporary workspace first:
+`go work init . /path/to/gluon`, profile, then delete `go.work` (don't
+commit it).
