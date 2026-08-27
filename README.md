@@ -79,6 +79,14 @@ The image is Go-only and 24.8 MB. The vendored C++ parser is the
 differential-test oracle and stays in CI (root `Dockerfile`), not in a
 deployment.
 
+`./deploy.sh` ships it to Cloud Run (project `speax-498608`, `us-central1`):
+scale-to-zero, IAM-authenticated, a runtime identity with no project roles —
+the service only makes outbound HTTP and needs nothing from GCP.
+
+```
+https://robotstxt-svc-1041587693629.us-central1.run.app
+```
+
 Layout: `src-google/` vendored google/robotstxt (see VENDOR.md) · `grammar/rep.ebnf`
 RFC 9309 EBNF formalization · `src-gluon/` grammar-driven parser, events
 compiler, two-tier recovery, matcher + renderer (README there explains the

@@ -2,6 +2,30 @@
 
 Newest entries at top.
 
+## 2026-08-27 — deployed to Cloud Run; renamed robots-svc -> robotstxt-svc
+
+`./deploy.sh` mirrors webrisk-svc's conventions (same project `speax-498608`,
+`us-central1`, the `embedder` Artifact Registry repo, a per-service SA with no
+project roles, `--no-allow-unauthenticated`, git-SHA image tags). It also runs
+`gcloud auth configure-docker us-west1-docker.pkg.dev` itself — the first deploy
+failed on an unauthenticated Artifact Registry push, and that is a host setup
+step, not something a human should have to know.
+
+Live at `https://robotstxt-svc-1041587693629.us-central1.run.app`. Sized small
+(512Mi/1cpu, concurrency 80): robots.txt work is one small fetch and a parse.
+
+Renamed from `robots-svc` throughout — binary, image, Cloud Run service, runtime
+SA, and `cmd/` directory — so the deployed name matches the repo.
+
+**Known quirk, not ours.** `GET /healthz` returns a Google HTML 404 that never
+reaches the container (the container logs show only the POSTs). The same is true
+of `webrisk`, a service this repo never touched, so it is environmental to this
+project's network rather than something the service does — something ahead of
+Cloud Run answers non-API paths. The API endpoints work correctly and
+unauthenticated requests are still rejected with 403, so the pipeline is
+unaffected; `/healthz` remains useful locally and under docker-compose. Worth
+chasing if a Cloud Run health check is ever wanted.
+
 ## 2026-08-27 — cmd/robotstxt-svc landed, wired into run.sh
 
 **Why.** proto-robotstxt is being containerized as one service in a crawl
