@@ -40,6 +40,12 @@ Read the root `README.md` first — it is the project spec. Then skim
 - `proto/rep.proto` — consolidated derived proto rep
 - `cmd/gluon` — CLI (`grammar` / `parse` / `rep` / `events` / `meta` /
   `allowed` / `render` / `check` / `genproto`; `-recover` on rep/events/check)
+- `cmd/robots-svc` — HTTP/JSON service (`:parse` fetches a domain's robots.txt
+  and returns sitemaps + Crawl-delay + the §2.3.1 verdict; `:filter` applies it
+  to a URL list). Built by `build.sh` automatically (`./cmd/...`), imaged by
+  `Dockerfile.svc` (Go only — the C++ oracle stays in CI), gated by run.sh
+  step 6. Wire types are plain Go structs on purpose: `proto/` is for
+  grammar-generated files (rule 6), so service DTOs do not go there.
 - `tools/robots-dump/` — C++ event dumper over the vendored parser
 - `tools/{rfc,google-dev}/` — docs pullers (`docs/rfc/`, `docs/google-dev-docs/`)
 - `testdata/` — strict corpus (cross-checked); `testdata/malformed/` —

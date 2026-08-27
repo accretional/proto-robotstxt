@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.7
+#
+# proto-robotstxt — the robots-svc service image (cmd/robots-svc).
+#
+# Deliberately NOT an extension of the root Dockerfile. That one is a CI image:
+# it installs bazelisk, compiles abseil and googletest, builds the vendored
+# google/robotstxt C++ parser, and runs ./run.sh at build time. The C++ side is
+# the differential-test ORACLE — it proves src-gluon agrees with google's parser
+# — and an oracle belongs in CI, not in a deployment. Shipping it would drag a
+# Bazel toolchain and a C++ build into a service that never calls it.
+#
+# So this image is Go only. The grammar is embedded (grammar/embed.go), so the
+# runtime needs nothing from disk but the CA bundle distroless already carries.
+
+ARG GO_VERSION=1.26
+
+FROM golang:${GO_VERSION} AS build
+WORKDIR /src
+
+# Module cache layer: invalidated only when the dependency set moves.
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY grammar/ grammar/
+COPY src-gluon/ src-gluon/
+COPY cmd/ cmd/
+
+# Gate the image on the service's own tests. src-gluon's full suite needs the
+# C++ oracle binaries and belongs to ./run.sh, but cmd/robots-svc is
+# self-contained (httptest origins), so there is no reason to ship it unproven.
+RUN go test ./cmd/robots-svc/
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/robots-svc ./cmd/robots-svc
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/robots-svc /robots-svc
+USER nonroot:nonroot
+EXPOSE 8080
+ENTRYPOINT ["/robots-svc"]

@@ -66,7 +66,30 @@ relevant `docs/progresslog/<taskname>.md` entry.
    pseudo-versions (see `tools/gluon/README.md`); tagged releases would make
    go.mod human-readable and downgrades deliberate.
 
+10. **robots-svc follow-ups** (service landed 2026-08-27, see
+    docs/progresslog/robots-svc.md). Deferred deliberately, in priority order:
+    (a) **no robots.txt cache** — the service refetches on every `:parse`, while
+    RFC 9309 §2.4 and Google both cache for up to 24h. A corpus run over many
+    domains re-fetches per domain, which is fine; a per-URL workload would not
+    be. (b) `:filter` takes the robots.txt text on every call rather than a
+    handle, so a large URL list ships the document with it — stateless on
+    purpose, revisit if payloads get big. (c) **https only** — a bare domain
+    defaults to https with no http fallback, so an http-only origin reports
+    unreachable (disallow-all). (d) the §2.3.1.4 30-day escape hatch (and
+    Google's 12h/30d schedule) is a policy over *repeated* fetches; the
+    stateless service returns the initial verdict only.
+
 ## Done
+
+- **robots-svc: HTTP/JSON service + container** (2026-08-27, see
+  docs/progresslog/robots-svc.md): `cmd/robots-svc` with `:parse` (fetch a
+  domain's robots.txt under the RFC 9309 §2.3.1 status semantics, return
+  sitemaps + the applicable Crawl-delay + tier/irregular-line health) and
+  `:filter` (apply a robots.txt to a URL list via the matcher). `Dockerfile.svc`
+  builds a 24.8 MB Go-only image — the vendored C++ parser is the differential
+  oracle and stays in CI. run.sh step 6 asserts the service's verdict matches
+  `robots_main`. 30 tests, including all nine HTTP status classes and the
+  Crawl-delay group-attribution rules.
 
 - **Aggregate ALL Google crawling/indexing docs** (2026-07-03, was item 1; see
   docs/progresslog/google-docs-aggregation.md): full doc tree enumerated by the new

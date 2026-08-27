@@ -42,10 +42,48 @@ gen/bin/gluon grammar|parse|rep|events|meta|allowed|render|check|genproto
                                                  # grammar-driven side (see src-gluon/README.md)
 ```
 
+## Service
+
+`cmd/robots-svc` serves the parser over HTTP/JSON — the form the crawl pipeline
+consumes. It fetches a domain's robots.txt itself, because the fetch semantics
+are part of the spec (see below).
+
+```sh
+docker build -f Dockerfile.svc -t robots-svc .
+docker run -p 8080:8080 robots-svc
+
+curl -s localhost:8080/v1/robots:parse -H 'Content-Type: application/json' \
+  -d '{"domain":"www.nytimes.com","agent":"MyBot"}'
+# {"outcome":"success","tier":"recovered","irregular_lines":7,
+#  "sitemaps":["https://www.nytimes.com/sitemaps/new/news.xml.gz", ...25 of them]}
+
+curl -s localhost:8080/v1/robots:filter -H 'Content-Type: application/json' \
+  -d '{"robots_txt":"User-agent: *\nDisallow: /private\n","urls":["https://e.com/private/x"]}'
+# {"allowed":[],"disallowed":["https://e.com/private/x"]}
+```
+
+`:parse` returns the sitemaps, the applicable `Crawl-delay`, and — when there are
+no rules to apply — the RFC 9309 §2.3.1 verdict. `:filter` applies a robots.txt
+to a list of URLs, which is what turns "URLs a sitemap lists" into "URLs this
+agent may fetch".
+
+**The fetch follows §2.3.1, which is not intuitive**: `4xx` other than 429 means
+*allow everything* (Google explicitly warns against using 401/403 to mean
+"disallow"), while 429, 5xx, and DNS/network failures mean *disallow everything*;
+a redirect chain past five hops is a 404, not a transport failure. That logic
+lives with the parser rather than in a caller. Responses always come from the
+two-tier path, and report which tier answered — real robots.txt files fail the
+strict RFC grammar routinely.
+
+The image is Go-only and 24.8 MB. The vendored C++ parser is the
+differential-test oracle and stays in CI (root `Dockerfile`), not in a
+deployment.
+
 Layout: `src-google/` vendored google/robotstxt (see VENDOR.md) · `grammar/rep.ebnf`
 RFC 9309 EBNF formalization · `src-gluon/` grammar-driven parser, events
 compiler, two-tier recovery, matcher + renderer (README there explains the
 pipeline) · `proto/rep.proto` + `proto/recover.proto` derived typed reps ·
-`cmd/gluon` CLI · `tools/` robots-dump + docs pullers ·
+`cmd/gluon` CLI · `cmd/robots-svc` HTTP service (`Dockerfile.svc`) ·
+`tools/` robots-dump + docs pullers ·
 `testdata/` strict + malformed corpora · `fuzz/`, `bench/`, `docker/`,
 `docs/` (RFC + Google-docs knowledgebase, TODO, progress logs).

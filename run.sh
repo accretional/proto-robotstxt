@@ -7,6 +7,8 @@
 #   2. run the vendored google parser CLI (gen/bin/robots_main) on it
 #   3. run our gluon-grammar CLI (gen/bin/gluon) on it
 #   4. cross-check: both parsers must agree (gen/bin/gluon -check)
+#   5. two-tier recovery cross-check over both corpus tiers
+#   6. exercise the robots-svc HTTP service against the same file
 #
 # CLAUDE.md rule: this script must succeed end-to-end before any git push.
 #
@@ -83,5 +85,56 @@ gen/bin/gluon check -dump gen/bin/robots_dump testdata/*.txt
 # --- 5. two-tier recovery cross-check (strict + malformed tiers) ---------------
 log "cross-checking two-tier recovery (gluon check -recover) on BOTH corpus tiers"
 gen/bin/gluon check -recover -dump gen/bin/robots_dump testdata/*.txt testdata/malformed/*.txt
+
+# --- 6. robots-svc: the HTTP/JSON service over the same parser ----------------
+# The service is what the crawl pipeline calls, so the gate proves it starts,
+# serves, and reaches the same verdict as the matcher above. It is served a
+# local file rather than a live origin so this step stays offline-safe; the
+# fetch path's status-code semantics are covered by cmd/robots-svc's own tests.
+log "robots-svc: serving ${ROBOTS} to a local origin and querying the service"
+
+# Serve it under the name the service will ask for: /robots.txt.
+rm -rf gen/svc-origin && mkdir -p gen/svc-origin
+cp "${ROBOTS}" gen/svc-origin/robots.txt
+
+python3 -m http.server 8079 --directory gen/svc-origin >/dev/null 2>&1 &
+origin_pid=$!
+gen/bin/robots-svc -addr :8078 >/dev/null 2>&1 &
+svc_pid=$!
+cleanup() { kill "${origin_pid}" "${svc_pid}" 2>/dev/null || true; }
+trap cleanup EXIT
+
+for _ in $(seq 1 40); do
+  curl -fsS localhost:8078/healthz >/dev/null 2>&1 && break
+  sleep 0.25
+done
+curl -fsS localhost:8078/healthz >/dev/null || { echo "[run] robots-svc did not become healthy" >&2; exit 1; }
+
+svc_filter=$(curl -fsS -X POST localhost:8078/v1/robots:filter \
+  -H 'Content-Type: application/json' \
+  --data-binary "$(python3 -c '
+import json,sys
+robots = open(sys.argv[1], "rb").read().decode("utf-8", "replace")
+print(json.dumps({"robots_txt": robots, "agent": sys.argv[2], "urls": [sys.argv[3]]}))
+' "${ROBOTS}" "${AGENT}" "${URL}")")
+
+# 0 = allowed above; the service must put the URL in the matching bucket.
+if [ "${status}" = "0" ]; then want="allowed"; else want="disallowed"; fi
+if ! printf '%s' "${svc_filter}" | grep -q "\"${want}\":\[\"${URL}\"\]"; then
+  echo "[run] SERVICE DIVERGENCE: robots_main said ${want}, service said: ${svc_filter}" >&2
+  exit 1
+fi
+log "robots-svc :filter agrees with robots_main (${want})"
+
+svc_parse=$(curl -fsS -X POST localhost:8078/v1/robots:parse \
+  -H 'Content-Type: application/json' \
+  -d "{\"domain\":\"http://localhost:8079\",\"agent\":\"${AGENT}\"}")
+printf '%s\n' "${svc_parse}" | sed 's/^/    /'
+printf '%s' "${svc_parse}" | grep -q '"outcome":"success"' || {
+  echo "[run] robots-svc :parse did not succeed against the local origin" >&2; exit 1; }
+log "robots-svc :parse OK"
+
+cleanup
+trap - EXIT
 
 log "e2e OK"

@@ -19,6 +19,7 @@ docs/rfc/*/raw.*
 
 # docker files themselves aren't needed inside the image
 Dockerfile
+Dockerfile.svc
 .dockerignore
 docker/
 

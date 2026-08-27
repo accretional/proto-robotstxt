@@ -112,3 +112,28 @@ The default build (full `./run.sh` e2e gate inside the image) is green —
 verified 2026-07-04 with the complete Go/gluon toolchain, recovery layer and
 matcher included. `RUN_E2E=0` remains available purely as a fast-path for
 toolchain/C++-only iteration.
+
+## Two images, two purposes
+
+| file | what it is | contains |
+|---|---|---|
+| `../Dockerfile` | **CI image.** Builds and e2e-tests the whole repo; `docker run` re-runs `./run.sh`. | bazelisk + the vendored C++ parser + Go + the full gate |
+| `../Dockerfile.svc` | **Service image.** The deployable `cmd/robots-svc`. | the Go binary only (24.8 MB, distroless/static) |
+
+They are deliberately not layered on one another. The vendored google/robotstxt
+parser is this repo's differential-test **oracle** — `gluon check` and `run.sh`
+diff our event stream against it — which makes it CI infrastructure, not runtime
+code. `robots-svc` never calls it, so shipping it would drag a Bazel toolchain
+and a C++ build into a deployment for nothing.
+
+```sh
+# service image
+docker build -f ../Dockerfile.svc -t robots-svc ..
+docker run -p 8080:8080 robots-svc
+curl -s localhost:8080/v1/robots:parse -H 'Content-Type: application/json' \
+  -d '{"domain":"example.com"}'
+```
+
+The service's own tests run in the builder stage, so the image cannot be built
+from code that fails them. The grammar is embedded (`grammar/embed.go`), so the
+runtime image needs no files on disk.
