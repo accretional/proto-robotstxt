@@ -1,6 +1,6 @@
 package main
 
-// api.go — the HTTP/JSON surface of robots-svc.
+// api.go — the HTTP/JSON surface of robotstxt-svc.
 //
 // The wire types are plain Go structs, not protos. proto/rep.proto and
 // proto/recover.proto are *generated from the grammar* (CLAUDE.md rule 6:

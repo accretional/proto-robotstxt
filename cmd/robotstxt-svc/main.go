@@ -1,4 +1,4 @@
-// Command robots-svc serves proto-robotstxt over HTTP/JSON: it fetches a
+// Command robotstxt-svc serves proto-robotstxt over HTTP/JSON: it fetches a
 // domain's robots.txt, parses it with the grammar-driven parser, and answers the
 // two questions a crawler asks of it — what may I fetch, and where are the
 // sitemaps.
@@ -44,7 +44,7 @@ func main() {
 	// safe for concurrent use (src-gluon TestConcurrentGrammarUse).
 	g, err := robots.Default()
 	if err != nil {
-		log.Fatalf("robots-svc: load grammar: %v", err)
+		log.Fatalf("robotstxt-svc: load grammar: %v", err)
 	}
 
 	s := &server{grammar: g, fetch: newFetcher(*userAgent, *fetchTimeout)}
@@ -55,9 +55,9 @@ func main() {
 	mux.HandleFunc("GET /healthz", s.healthz)
 
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	log.Printf("robots-svc: listening on %s", *addr)
+	log.Printf("robotstxt-svc: listening on %s", *addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("robots-svc: %v", err)
+		log.Fatalf("robotstxt-svc: %v", err)
 	}
 }
 

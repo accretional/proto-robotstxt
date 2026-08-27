@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# proto-robotstxt — the robots-svc service image (cmd/robots-svc).
+# proto-robotstxt — the robotstxt-svc service image (cmd/robotstxt-svc).
 #
 # Deliberately NOT an extension of the root Dockerfile. That one is a CI image:
 # it installs bazelisk, compiles abseil and googletest, builds the vendored
@@ -26,13 +26,13 @@ COPY src-gluon/ src-gluon/
 COPY cmd/ cmd/
 
 # Gate the image on the service's own tests. src-gluon's full suite needs the
-# C++ oracle binaries and belongs to ./run.sh, but cmd/robots-svc is
+# C++ oracle binaries and belongs to ./run.sh, but cmd/robotstxt-svc is
 # self-contained (httptest origins), so there is no reason to ship it unproven.
-RUN go test ./cmd/robots-svc/
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/robots-svc ./cmd/robots-svc
+RUN go test ./cmd/robotstxt-svc/
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/robotstxt-svc ./cmd/robotstxt-svc
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/robots-svc /robots-svc
+COPY --from=build /out/robotstxt-svc /robotstxt-svc
 USER nonroot:nonroot
 EXPOSE 8080
-ENTRYPOINT ["/robots-svc"]
+ENTRYPOINT ["/robotstxt-svc"]

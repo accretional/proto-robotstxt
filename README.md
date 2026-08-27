@@ -44,13 +44,13 @@ gen/bin/gluon grammar|parse|rep|events|meta|allowed|render|check|genproto
 
 ## Service
 
-`cmd/robots-svc` serves the parser over HTTP/JSON — the form the crawl pipeline
+`cmd/robotstxt-svc` serves the parser over HTTP/JSON — the form the crawl pipeline
 consumes. It fetches a domain's robots.txt itself, because the fetch semantics
 are part of the spec (see below).
 
 ```sh
-docker build -f Dockerfile.svc -t robots-svc .
-docker run -p 8080:8080 robots-svc
+docker build -f Dockerfile.svc -t robotstxt-svc .
+docker run -p 8080:8080 robotstxt-svc
 
 curl -s localhost:8080/v1/robots:parse -H 'Content-Type: application/json' \
   -d '{"domain":"www.nytimes.com","agent":"MyBot"}'
@@ -83,7 +83,7 @@ Layout: `src-google/` vendored google/robotstxt (see VENDOR.md) · `grammar/rep.
 RFC 9309 EBNF formalization · `src-gluon/` grammar-driven parser, events
 compiler, two-tier recovery, matcher + renderer (README there explains the
 pipeline) · `proto/rep.proto` + `proto/recover.proto` derived typed reps ·
-`cmd/gluon` CLI · `cmd/robots-svc` HTTP service (`Dockerfile.svc`) ·
+`cmd/gluon` CLI · `cmd/robotstxt-svc` HTTP service (`Dockerfile.svc`) ·
 `tools/` robots-dump + docs pullers ·
 `testdata/` strict + malformed corpora · `fuzz/`, `bench/`, `docker/`,
 `docs/` (RFC + Google-docs knowledgebase, TODO, progress logs).

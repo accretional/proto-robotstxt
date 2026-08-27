@@ -118,18 +118,18 @@ toolchain/C++-only iteration.
 | file | what it is | contains |
 |---|---|---|
 | `../Dockerfile` | **CI image.** Builds and e2e-tests the whole repo; `docker run` re-runs `./run.sh`. | bazelisk + the vendored C++ parser + Go + the full gate |
-| `../Dockerfile.svc` | **Service image.** The deployable `cmd/robots-svc`. | the Go binary only (24.8 MB, distroless/static) |
+| `../Dockerfile.svc` | **Service image.** The deployable `cmd/robotstxt-svc`. | the Go binary only (24.8 MB, distroless/static) |
 
 They are deliberately not layered on one another. The vendored google/robotstxt
 parser is this repo's differential-test **oracle** — `gluon check` and `run.sh`
 diff our event stream against it — which makes it CI infrastructure, not runtime
-code. `robots-svc` never calls it, so shipping it would drag a Bazel toolchain
+code. `robotstxt-svc` never calls it, so shipping it would drag a Bazel toolchain
 and a C++ build into a deployment for nothing.
 
 ```sh
 # service image
-docker build -f ../Dockerfile.svc -t robots-svc ..
-docker run -p 8080:8080 robots-svc
+docker build -f ../Dockerfile.svc -t robotstxt-svc ..
+docker run -p 8080:8080 robotstxt-svc
 curl -s localhost:8080/v1/robots:parse -H 'Content-Type: application/json' \
   -d '{"domain":"example.com"}'
 ```

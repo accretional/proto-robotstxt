@@ -1,8 +1,8 @@
-# robots-svc — the HTTP/JSON service image
+# robotstxt-svc — the HTTP/JSON service image
 
 Newest entries at top.
 
-## 2026-08-27 — cmd/robots-svc landed, wired into run.sh
+## 2026-08-27 — cmd/robotstxt-svc landed, wired into run.sh
 
 **Why.** proto-robotstxt is being containerized as one service in a crawl
 pipeline (domain → webrisk → robots.txt → sitemap → URL list, orchestrated by a
@@ -11,7 +11,7 @@ pipeline needs something that takes a *domain*.
 
 **What landed.**
 
-- `cmd/robots-svc/` — `POST /v1/robots:parse`, `POST /v1/robots:filter`,
+- `cmd/robotstxt-svc/` — `POST /v1/robots:parse`, `POST /v1/robots:filter`,
   `GET /healthz`. Picked up by `build.sh` with no change, since it already does
   `go build -o gen/bin/ ./cmd/...`.
   - `api.go` — wire types as plain Go structs. **Not** protos, deliberately:
@@ -60,6 +60,6 @@ parser, `./run.sh` at build time). The C++ side is the differential-test *oracle
 binary takes the image to 24.8 MB with the grammar embedded, so the runtime needs
 nothing from disk.
 
-**Gate.** `./run.sh` green, including the new step 6. `go test ./cmd/robots-svc/`
+**Gate.** `./run.sh` green, including the new step 6. `go test ./cmd/robotstxt-svc/`
 is 30 cases (status semantics, redirects, truncation, origin normalization,
 sitemaps, crawl-delay grouping, both handlers).
