@@ -3,12 +3,22 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
+
+	pb "github.com/accretional/proto-robotstxt/proto/pb"
 	robots "github.com/accretional/proto-robotstxt/src-gluon"
 )
 
@@ -38,17 +48,17 @@ func eventsOf(t *testing.T, g *robots.Grammar, src string) []robots.Event {
 func TestFetch_StatusSemantics(t *testing.T) {
 	cases := []struct {
 		status  int
-		outcome FetchOutcome
+		outcome pb.FetchOutcome
 	}{
-		{200, OutcomeSuccess},
-		{204, OutcomeSuccess},
-		{401, OutcomeUnavailable}, // google explicitly warns 401/403 mean ALLOW
-		{403, OutcomeUnavailable},
-		{404, OutcomeUnavailable},
-		{410, OutcomeUnavailable},
-		{429, OutcomeUnreachable}, // the 4xx exception, grouped with 5xx
-		{500, OutcomeUnreachable},
-		{503, OutcomeUnreachable},
+		{200, pb.FetchOutcome_FETCH_OUTCOME_SUCCESS},
+		{204, pb.FetchOutcome_FETCH_OUTCOME_SUCCESS},
+		{401, pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE}, // google explicitly warns 401/403 mean ALLOW
+		{403, pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE},
+		{404, pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE},
+		{410, pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE},
+		{429, pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE}, // the 4xx exception, grouped with 5xx
+		{500, pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE},
+		{503, pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
@@ -75,8 +85,8 @@ func TestFetch_RedirectChainExhaustsToUnavailable(t *testing.T) {
 	defer srv.Close()
 
 	got := newFetcher("test", 5*time.Second).get(context.Background(), srv.URL)
-	if got.Outcome != OutcomeUnavailable {
-		t.Errorf("endless redirect -> %s, want %s", got.Outcome, OutcomeUnavailable)
+	if got.Outcome != pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE {
+		t.Errorf("endless redirect -> %s, want %s", got.Outcome, pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE)
 	}
 }
 
@@ -95,7 +105,7 @@ func TestFetch_RedirectFollowedWithinBudget(t *testing.T) {
 	defer srv.Close()
 
 	got := newFetcher("test", 5*time.Second).get(context.Background(), srv.URL)
-	if got.Outcome != OutcomeSuccess || !strings.Contains(string(got.Body), "Disallow") {
+	if got.Outcome != pb.FetchOutcome_FETCH_OUTCOME_SUCCESS || !strings.Contains(string(got.Body), "Disallow") {
 		t.Errorf("3-hop redirect -> %s (%q), want success with the body", got.Outcome, got.Body)
 	}
 }
@@ -107,8 +117,8 @@ func TestFetch_NetworkFailureIsUnreachable(t *testing.T) {
 	srv.Close() // nothing is listening now
 
 	got := newFetcher("test", 2*time.Second).get(context.Background(), url)
-	if got.Outcome != OutcomeUnreachable {
-		t.Errorf("dead host -> %s, want %s", got.Outcome, OutcomeUnreachable)
+	if got.Outcome != pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE {
+		t.Errorf("dead host -> %s, want %s", got.Outcome, pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE)
 	}
 }
 
@@ -121,7 +131,7 @@ func TestFetch_TruncatesAtGoogleSizeLimit(t *testing.T) {
 	defer srv.Close()
 
 	got := newFetcher("test", 10*time.Second).get(context.Background(), srv.URL)
-	if got.Outcome != OutcomeSuccess {
+	if got.Outcome != pb.FetchOutcome_FETCH_OUTCOME_SUCCESS {
 		t.Fatalf("outcome = %s, want success", got.Outcome)
 	}
 	if len(got.Body) != maxRobotsBytes {
@@ -255,56 +265,53 @@ func newServer(t *testing.T) *server {
 	return &server{grammar: grammar(t), fetch: newFetcher("test", 5*time.Second)}
 }
 
-func TestFilterHandler(t *testing.T) {
+func TestFilter(t *testing.T) {
 	s := newServer(t)
-	body := `{"robots_txt":"User-agent: *\nDisallow: /private\nAllow: /private/ok\n",
-	          "agent":"MyBot",
-	          "urls":["https://e.com/public","https://e.com/private/x","https://e.com/private/ok"]}`
-
-	rr := httptest.NewRecorder()
-	s.filter(rr, httptest.NewRequest("POST", "/v1/robots:filter", strings.NewReader(body)))
-	if rr.Code != 200 {
-		t.Fatalf("code = %d: %s", rr.Code, rr.Body)
+	resp, err := s.Filter(context.Background(), &pb.FilterRequest{
+		RobotsTxt: "User-agent: *\nDisallow: /private\nAllow: /private/ok\n",
+		Agent:     "MyBot",
+		Urls: []string{
+			"https://e.com/public",
+			"https://e.com/private/x",
+			"https://e.com/private/ok",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Filter: %v", err)
 	}
-	got := rr.Body.String()
-	for _, want := range []string{`"https://e.com/public"`, `"https://e.com/private/ok"`} {
-		if !strings.Contains(got, want) {
-			t.Errorf("response %s missing allowed %s", got, want)
-		}
+	if len(resp.Allowed) != 2 {
+		t.Errorf("allowed = %v, want /public and /private/ok", resp.Allowed)
 	}
-	if !strings.Contains(got, `"disallowed":["https://e.com/private/x"]`) {
-		t.Errorf("response %s should disallow /private/x only", got)
+	if len(resp.Disallowed) != 1 || resp.Disallowed[0] != "https://e.com/private/x" {
+		t.Errorf("disallowed = %v, want just /private/x", resp.Disallowed)
 	}
 }
 
 // The §2.3.1 verdicts short-circuit the matcher, so a caller can act on an
 // unavailable or unreachable robots.txt without inventing a rules document.
-func TestFilterHandler_ShortCircuits(t *testing.T) {
+func TestFilter_ShortCircuits(t *testing.T) {
 	s := newServer(t)
-	urls := `["https://e.com/a","https://e.com/b"]`
+	urls := []string{"https://e.com/a", "https://e.com/b"}
 
-	rr := httptest.NewRecorder()
-	s.filter(rr, httptest.NewRequest("POST", "/", strings.NewReader(`{"allow_all":true,"urls":`+urls+`}`)))
-	if !strings.Contains(rr.Body.String(), `"allowed":["https://e.com/a","https://e.com/b"]`) {
-		t.Errorf("allow_all: %s", rr.Body)
+	resp, err := s.Filter(context.Background(), &pb.FilterRequest{AllowAll: true, Urls: urls})
+	if err != nil || len(resp.Allowed) != 2 {
+		t.Errorf("allow_all: %v %v", resp, err)
 	}
 
-	rr = httptest.NewRecorder()
-	s.filter(rr, httptest.NewRequest("POST", "/", strings.NewReader(`{"disallow_all":true,"urls":`+urls+`}`)))
-	if !strings.Contains(rr.Body.String(), `"disallowed":["https://e.com/a","https://e.com/b"]`) {
-		t.Errorf("disallow_all: %s", rr.Body)
+	resp, err = s.Filter(context.Background(), &pb.FilterRequest{DisallowAll: true, Urls: urls})
+	if err != nil || len(resp.Disallowed) != 2 {
+		t.Errorf("disallow_all: %v %v", resp, err)
 	}
 
-	rr = httptest.NewRecorder()
-	s.filter(rr, httptest.NewRequest("POST", "/", strings.NewReader(`{"allow_all":true,"disallow_all":true,"urls":`+urls+`}`)))
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("contradictory verdicts should be rejected; got %d", rr.Code)
+	_, err = s.Filter(context.Background(), &pb.FilterRequest{AllowAll: true, DisallowAll: true, Urls: urls})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("contradictory verdicts should be InvalidArgument; got %v", err)
 	}
 }
 
 // End-to-end over a live origin: a document that fails the strict RFC grammar
 // still answers, and says it was recovered.
-func TestParseHandler_RecoveredTierStillAnswers(t *testing.T) {
+func TestParse_RecoveredTierStillAnswers(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// "archive.org_bot" is not a legal RFC 9309 product-token ('.' and digits
 		// are outside the grammar), so tier 1 rejects the document.
@@ -315,39 +322,89 @@ func TestParseHandler_RecoveredTierStillAnswers(t *testing.T) {
 	defer srv.Close()
 
 	s := newServer(t)
-	rr := httptest.NewRecorder()
-	s.parse(rr, httptest.NewRequest("POST", "/", strings.NewReader(
-		`{"domain":"`+srv.URL+`","agent":"MyBot","include_text":true}`)))
-
-	if rr.Code != 200 {
-		t.Fatalf("code = %d: %s", rr.Code, rr.Body)
+	resp, err := s.Parse(context.Background(), &pb.ParseRequest{
+		Domain: srv.URL, Agent: "MyBot", IncludeText: true,
+	})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
 	}
-	got := rr.Body.String()
-	for _, want := range []string{
-		`"outcome":"success"`,
-		`"tier":"recovered"`,
-		`"crawl_delay_seconds":2`,
-		srv.URL + `/sitemap.xml`,
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("response missing %s:\n%s", want, got)
-		}
+	if resp.Outcome != pb.FetchOutcome_FETCH_OUTCOME_SUCCESS || resp.Tier != "recovered" {
+		t.Errorf("outcome=%s tier=%s, want success/recovered", resp.Outcome, resp.Tier)
+	}
+	if resp.CrawlDelaySeconds != 2 {
+		t.Errorf("crawl delay = %v, want 2", resp.CrawlDelaySeconds)
+	}
+	if len(resp.Sitemaps) != 1 || resp.Sitemaps[0] != srv.URL+"/sitemap.xml" {
+		t.Errorf("sitemaps = %v, want the resolved /sitemap.xml", resp.Sitemaps)
+	}
+	if resp.RobotsTxt == "" {
+		t.Error("include_text set but robots_txt empty")
 	}
 }
 
 // A 403 yields allow-all with no rules, not an error.
-func TestParseHandler_UnavailableAllowsAll(t *testing.T) {
+func TestParse_UnavailableAllowsAll(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer srv.Close()
 
 	s := newServer(t)
-	rr := httptest.NewRecorder()
-	s.parse(rr, httptest.NewRequest("POST", "/", strings.NewReader(`{"domain":"`+srv.URL+`"}`)))
+	resp, err := s.Parse(context.Background(), &pb.ParseRequest{Domain: srv.URL})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if resp.Outcome != pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE || !resp.AllowAll {
+		t.Errorf("403 should be unavailable/allow_all; got %s allow_all=%v", resp.Outcome, resp.AllowAll)
+	}
+}
 
-	got := rr.Body.String()
-	if !strings.Contains(got, `"outcome":"unavailable"`) || !strings.Contains(got, `"allow_all":true`) {
-		t.Errorf("403 should be unavailable/allow_all: %s", got)
+// A bad domain is an InvalidArgument, not an internal error.
+func TestParse_BadDomainIsInvalidArgument(t *testing.T) {
+	s := newServer(t)
+	if _, err := s.Parse(context.Background(), &pb.ParseRequest{Domain: "ftp://example.com"}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("got %v, want InvalidArgument", err)
+	}
+}
+
+// The real gRPC surface: served over a socket, reflection registered, health
+// reporting SERVING. This is what grpcurl and Cloud Run actually talk to.
+func TestGRPCSurface(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := grpc.NewServer()
+	pb.RegisterRobotsServiceServer(srv, newServer(t))
+	hs := health.NewServer()
+	hs.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(srv, hs)
+	reflection.Register(srv)
+	go srv.Serve(lis)
+	defer srv.Stop()
+
+	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	got, err := pb.NewRobotsServiceClient(conn).Filter(ctx, &pb.FilterRequest{
+		RobotsTxt: "User-agent: *\nDisallow: /private\n",
+		Urls:      []string{"https://e.com/ok", "https://e.com/private/x"},
+	})
+	if err != nil {
+		t.Fatalf("Filter over the wire: %v", err)
+	}
+	if len(got.Allowed) != 1 || len(got.Disallowed) != 1 {
+		t.Errorf("allowed=%v disallowed=%v, want one each", got.Allowed, got.Disallowed)
+	}
+
+	hc, err := healthpb.NewHealthClient(conn).Check(ctx, &healthpb.HealthCheckRequest{})
+	if err != nil || hc.Status != healthpb.HealthCheckResponse_SERVING {
+		t.Errorf("health = %v, %v; want SERVING", hc.GetStatus(), err)
 	}
 }

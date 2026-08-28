@@ -1,5 +1,6 @@
 #!/bin/bash
-# Deploys robotstxt-svc (cmd/robotstxt-svc) to Cloud Run (us-central1). Scale-to-zero,
+# Deploys robotstxt-svc (cmd/robotstxt-svc), a gRPC service, to Cloud Run
+# (us-central1). Scale-to-zero,
 # IAM-authenticated, no project roles on the runtime identity — it fetches
 # robots.txt from the public internet and needs nothing from GCP.
 #
@@ -45,10 +46,14 @@ DOCKER_BUILDKIT=1 docker build --platform linux/amd64 \
 docker push "${IMAGE}:latest"
 docker push "${IMAGE}:${SHA}"
 
+# --use-http2 is REQUIRED for gRPC: without it Cloud Run terminates HTTP/2 at
+# the frontend and speaks HTTP/1.1 to the container, which a gRPC server cannot
+# answer. The symptom is every RPC failing at the transport layer.
 gcloud run deploy robotstxt-svc --project="${PROJECT}" --region="${REGION}" \
   --image="${IMAGE}:${SHA}" \
   --service-account="${SA}" \
   --no-allow-unauthenticated \
+  --use-http2 \
   --min-instances=0 --max-instances="${MAX_INSTANCES}" \
   --memory=512Mi --cpu=1 --concurrency="${CONCURRENCY}" \
   --timeout=120 \
@@ -58,5 +63,8 @@ URL=$(gcloud run services describe robotstxt-svc --project="${PROJECT}" \
   --region="${REGION}" --format='value(status.url)')
 echo
 echo "robotstxt-svc: ${URL}"
+echo "Call it:  grpcurl -H \"authorization: Bearer \$(gcloud auth print-identity-token)\" \\"
+echo "            -d '{\"domain\":\"example.com\"}' \\"
+echo "            ${URL#https://}:443 robotstxt.svc.v1.RobotsService/Parse"
 echo "Grant callers: gcloud run services add-iam-policy-binding robotstxt-svc \\"
 echo "  --region=${REGION} --member=serviceAccount:<caller-sa> --role=roles/run.invoker"

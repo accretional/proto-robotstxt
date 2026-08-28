@@ -1,0 +1,97 @@
+// robotstxt_service.proto — the gRPC surface of cmd/robotstxt-svc.
+//
+// AUTHORED, NOT GENERATED — the one hand-written proto in this repo.
+//
+// It shares this directory with rep.proto and recover.proto, which are the
+// opposite: DERIVED FROM THE GRAMMAR by `gluon genproto` and regenerated, never
+// hand-edited (CLAUDE.md rule 6). Nothing here is grammar-derived, and
+// `gluon genproto` neither reads nor writes this file — the `_service` suffix
+// is the marker for which kind a file is.
+//
+// Regenerate its Go bindings with ./regen.sh after editing.
+syntax = "proto3";
+
+package robotstxt.svc.v1;
+
+option go_package = "github.com/accretional/proto-robotstxt/proto/pb;robotstxtpb";
+
+// RobotsService answers the two questions a crawler asks of a robots.txt.
+service RobotsService {
+  // Parse fetches a domain's robots.txt and reports what it says: the sitemaps
+  // to walk, the crawl delay to pace by, and — when there are no rules to
+  // apply — the RFC 9309 §2.3.1 verdict.
+  rpc Parse(ParseRequest) returns (ParseResponse);
+
+  // Filter applies a robots.txt to a list of URLs. This is what turns "URLs a
+  // sitemap lists" into "URLs this agent may fetch".
+  rpc Filter(FilterRequest) returns (FilterResponse);
+}
+
+// FetchOutcome is how a robots.txt fetch resolved, in RFC 9309 §2.3.1 terms.
+enum FetchOutcome {
+  FETCH_OUTCOME_UNSPECIFIED = 0;
+  // Rules were fetched and parsed (§2.3.1.1).
+  FETCH_OUTCOME_SUCCESS = 1;
+  // No valid robots.txt exists — 4xx other than 429, or a redirect chain that
+  // never resolved. The crawler MAY access any resource (§2.3.1.3): allow all.
+  FETCH_OUTCOME_UNAVAILABLE = 2;
+  // robots.txt is undefined — 429, 5xx, DNS or network failure. The crawler
+  // MUST assume complete disallow (§2.3.1.4).
+  FETCH_OUTCOME_UNREACHABLE = 3;
+}
+
+message ParseRequest {
+  // A bare host ("example.com"), an origin, or any URL — the origin is derived
+  // from it. A missing scheme defaults to https.
+  string domain = 1;
+  // The product token whose group applies. Defaults to "*".
+  string agent = 2;
+  // Return the raw robots.txt, so a caller can pass it to Filter without a
+  // second fetch.
+  bool include_text = 3;
+}
+
+message ParseResponse {
+  string origin = 1;
+  string robots_url = 2;
+  FetchOutcome outcome = 3;
+
+  int32 status_code = 4;
+  string fetch_error = 5;
+
+  // Carry the §2.3.1 verdict when there are no rules to apply. Exactly one is
+  // true unless outcome is SUCCESS.
+  bool allow_all = 6;
+  bool disallow_all = 7;
+
+  // The Sitemap: lines, resolved against the origin. Document-global, not
+  // group-scoped (RFC 9309 §2.2.4).
+  repeated string sitemaps = 8;
+
+  // The Crawl-delay of the group matching the agent, if any. Not part of
+  // RFC 9309, and google's parser ignores it.
+  double crawl_delay_seconds = 9;
+
+  // Which parse tier produced the events: "strict" (the document satisfies the
+  // RFC 9309 grammar) or "recovered" (per-line recovery).
+  string tier = 10;
+  // Lines no grammar rule matched, recovered by the robots.cc fallback.
+  int32 irregular_lines = 11;
+
+  string robots_txt = 12;
+}
+
+message FilterRequest {
+  string robots_txt = 1;
+  string agent = 2;
+  repeated string urls = 3;
+  // Short-circuit the matcher when the caller already holds a §2.3.1 verdict
+  // from Parse and there are no rules to apply. Mutually exclusive.
+  bool allow_all = 4;
+  bool disallow_all = 5;
+}
+
+message FilterResponse {
+  repeated string allowed = 1;
+  repeated string disallowed = 2;
+}

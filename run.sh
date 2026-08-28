@@ -8,7 +8,7 @@
 #   3. run our gluon-grammar CLI (gen/bin/gluon) on it
 #   4. cross-check: both parsers must agree (gen/bin/gluon -check)
 #   5. two-tier recovery cross-check over both corpus tiers
-#   6. exercise the robotstxt-svc HTTP service against the same file
+#   6. exercise the robotstxt-svc gRPC service against the same file
 #
 # CLAUDE.md rule: this script must succeed end-to-end before any git push.
 #
@@ -86,12 +86,19 @@ gen/bin/gluon check -dump gen/bin/robots_dump testdata/*.txt
 log "cross-checking two-tier recovery (gluon check -recover) on BOTH corpus tiers"
 gen/bin/gluon check -recover -dump gen/bin/robots_dump testdata/*.txt testdata/malformed/*.txt
 
-# --- 6. robotstxt-svc: the HTTP/JSON service over the same parser -------------
+# --- 6. robotstxt-svc: the gRPC service over the same parser -------------------
 # The service is what the crawl pipeline calls, so the gate proves it starts,
 # serves, and reaches the same verdict as the matcher above. It is served a
 # local file rather than a live origin so this step stays offline-safe; the
-# fetch path's status-code semantics are covered by cmd/robotstxt-svc's own tests.
+# fetch path's status-code semantics are covered by cmd/robotstxt-svc's own
+# tests, as is the gRPC surface itself (TestGRPCSurface).
 log "robotstxt-svc: serving ${ROBOTS} to a local origin and querying the service"
+
+if ! command -v grpcurl >/dev/null 2>&1; then
+  log "installing grpcurl (needed to exercise the gRPC service)"
+  go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+  export PATH="$(go env GOPATH)/bin:${PATH}"
+fi
 
 # Serve it under the name the service will ask for: /robots.txt.
 rm -rf gen/svc-origin && mkdir -p gen/svc-origin
@@ -104,35 +111,41 @@ svc_pid=$!
 cleanup() { kill "${origin_pid}" "${svc_pid}" 2>/dev/null || true; }
 trap cleanup EXIT
 
+# Wait for the gRPC health service to report SERVING.
 for _ in $(seq 1 40); do
-  curl -fsS localhost:8078/healthz >/dev/null 2>&1 && break
+  grpcurl -plaintext localhost:8078 grpc.health.v1.Health/Check >/dev/null 2>&1 && break
   sleep 0.25
 done
-curl -fsS localhost:8078/healthz >/dev/null || { echo "[run] robotstxt-svc did not become healthy" >&2; exit 1; }
+grpcurl -plaintext localhost:8078 grpc.health.v1.Health/Check >/dev/null 2>&1 || {
+  echo "[run] robotstxt-svc did not become healthy" >&2; exit 1; }
 
-svc_filter=$(curl -fsS -X POST localhost:8078/v1/robots:filter \
-  -H 'Content-Type: application/json' \
-  --data-binary "$(python3 -c '
+svc_filter=$(grpcurl -plaintext -d "$(python3 -c '
 import json,sys
 robots = open(sys.argv[1], "rb").read().decode("utf-8", "replace")
 print(json.dumps({"robots_txt": robots, "agent": sys.argv[2], "urls": [sys.argv[3]]}))
-' "${ROBOTS}" "${AGENT}" "${URL}")")
+' "${ROBOTS}" "${AGENT}" "${URL}")" \
+  localhost:8078 robotstxt.svc.v1.RobotsService/Filter)
 
 # 0 = allowed above; the service must put the URL in the matching bucket.
 if [ "${status}" = "0" ]; then want="allowed"; else want="disallowed"; fi
-if ! printf '%s' "${svc_filter}" | grep -q "\"${want}\":\[\"${URL}\"\]"; then
+if ! printf '%s' "${svc_filter}" | tr -d ' \n' | grep -q "\"${want}\":\[\"${URL}\"\]"; then
   echo "[run] SERVICE DIVERGENCE: robots_main said ${want}, service said: ${svc_filter}" >&2
   exit 1
 fi
-log "robotstxt-svc :filter agrees with robots_main (${want})"
+log "robotstxt-svc Filter agrees with robots_main (${want})"
 
-svc_parse=$(curl -fsS -X POST localhost:8078/v1/robots:parse \
-  -H 'Content-Type: application/json' \
-  -d "{\"domain\":\"http://localhost:8079\",\"agent\":\"${AGENT}\"}")
+svc_parse=$(grpcurl -plaintext -d "{\"domain\":\"http://localhost:8079\",\"agent\":\"${AGENT}\"}" \
+  localhost:8078 robotstxt.svc.v1.RobotsService/Parse)
 printf '%s\n' "${svc_parse}" | sed 's/^/    /'
-printf '%s' "${svc_parse}" | grep -q '"outcome":"success"' || {
-  echo "[run] robotstxt-svc :parse did not succeed against the local origin" >&2; exit 1; }
-log "robotstxt-svc :parse OK"
+printf '%s' "${svc_parse}" | grep -q 'FETCH_OUTCOME_SUCCESS' || {
+  echo "[run] robotstxt-svc Parse did not succeed against the local origin" >&2; exit 1; }
+log "robotstxt-svc Parse OK"
+
+# Reflection must be registered: it is how grpcurl (and any operator) calls this
+# service without a .proto on hand.
+grpcurl -plaintext localhost:8078 list | grep -q 'robotstxt.svc.v1.RobotsService' || {
+  echo "[run] robotstxt-svc is not advertising its service via reflection" >&2; exit 1; }
+log "robotstxt-svc reflection OK"
 
 cleanup
 trap - EXIT

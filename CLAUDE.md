@@ -31,6 +31,11 @@ Read the root `README.md` first — it is the project spec. Then skim
    grammar-derived; recover.proto's descriptor is built in
    `src-gluon/recoverproto.go`. Everything else under `gen/` is git-ignored
    build output.
+   **`proto/robotstxt_service.proto` is the exception and the opposite kind of
+   file**: hand-written, not grammar-derived, describing the gRPC service. The
+   `_service` suffix is the marker. `gluon genproto` neither reads nor writes
+   it; `./regen.sh` regenerates its bindings into `proto/pb/` (committed, so an
+   ordinary build needs no protoc). Never merge the two kinds into one file.
 
 ## Layout / where things go
 
@@ -40,12 +45,16 @@ Read the root `README.md` first — it is the project spec. Then skim
 - `proto/rep.proto` — consolidated derived proto rep
 - `cmd/gluon` — CLI (`grammar` / `parse` / `rep` / `events` / `meta` /
   `allowed` / `render` / `check` / `genproto`; `-recover` on rep/events/check)
-- `cmd/robotstxt-svc` — HTTP/JSON service (`:parse` fetches a domain's robots.txt
-  and returns sitemaps + Crawl-delay + the §2.3.1 verdict; `:filter` applies it
-  to a URL list). Built by `build.sh` automatically (`./cmd/...`), imaged by
-  `Dockerfile.svc` (Go only — the C++ oracle stays in CI), gated by run.sh
-  step 6. Wire types are plain Go structs on purpose: `proto/` is for
-  grammar-generated files (rule 6), so service DTOs do not go there.
+- `cmd/robotstxt-svc` — **gRPC** service `robotstxt.svc.v1.RobotsService`
+  (`Parse` fetches a domain's robots.txt and returns sitemaps + Crawl-delay +
+  the §2.3.1 verdict; `Filter` applies it to a URL list). Server reflection and
+  `grpc.health.v1.Health` are registered. Built by `build.sh` automatically
+  (`./cmd/...`), imaged by `Dockerfile.svc` (Go only — the C++ oracle stays in
+  CI), deployed by `deploy.sh` with `--use-http2` (required for gRPC), gated by
+  run.sh step 6 via grpcurl.
+- `proto/robotstxt_service.proto` + `regen.sh` — the service contract, the ONE
+  hand-written proto here, with its Go bindings generated into `proto/pb/` and
+  committed. See rule 6.
 - `tools/robots-dump/` — C++ event dumper over the vendored parser
 - `tools/{rfc,google-dev}/` — docs pullers (`docs/rfc/`, `docs/google-dev-docs/`)
 - `testdata/` — strict corpus (cross-checked); `testdata/malformed/` —

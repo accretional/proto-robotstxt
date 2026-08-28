@@ -79,7 +79,20 @@ relevant `docs/progresslog/<taskname>.md` entry.
     Google's 12h/30d schedule) is a policy over *repeated* fetches; the
     stateless service returns the initial verdict only.
 
+11. **webrisk-svc is still HTTP/JSON.** robotstxt-svc and sitemap-svc are gRPC
+    as of 2026-08-28; webrisk was deliberately left alone. Until it moves,
+    crawl-pipeline carries two transports (see its pipeline/clients.go). Not
+    this repo's call to make, but worth tracking as the last piece of the split.
+
 ## Done
+
+- **robotstxt-svc: gRPC conversion + Cloud Run** (2026-08-28, see
+  docs/progresslog/robotstxt-svc.md): `robotstxt.svc.v1.RobotsService`
+  (`Parse`/`Filter`) with reflection and the standard health service;
+  `proto/robotstxt_service.proto` is the one hand-written proto, with `regen.sh`
+  and an explicit exception in CLAUDE.md rule 6. Deployed with `--use-http2`,
+  without which Cloud Run speaks HTTP/1.1 to the container and every RPC fails.
+  run.sh step 6 drives it through grpcurl.
 
 - **robotstxt-svc: HTTP/JSON service + container** (2026-08-27, see
   docs/progresslog/robotstxt-svc.md): `cmd/robotstxt-svc` with `:parse` (fetch a

@@ -40,11 +40,12 @@ gen/bin/robots_main <robots.txt> <agent> <url>   # google's CLI (vendored)
 gen/bin/robots_dump <robots.txt>                 # google parse-event dump
 gen/bin/gluon grammar|parse|rep|events|meta|allowed|render|check|genproto
                                                  # grammar-driven side (see src-gluon/README.md)
+gen/bin/robotstxt-svc                            # the gRPC service (see below)
 ```
 
 ## Service
 
-`cmd/robotstxt-svc` serves the parser over HTTP/JSON — the form the crawl pipeline
+`cmd/robotstxt-svc` serves the parser over **gRPC** — the form the crawl pipeline
 consumes. It fetches a domain's robots.txt itself, because the fetch semantics
 are part of the spec (see below).
 
@@ -52,20 +53,33 @@ are part of the spec (see below).
 docker build -f Dockerfile.svc -t robotstxt-svc .
 docker run -p 8080:8080 robotstxt-svc
 
-curl -s localhost:8080/v1/robots:parse -H 'Content-Type: application/json' \
-  -d '{"domain":"www.nytimes.com","agent":"MyBot"}'
-# {"outcome":"success","tier":"recovered","irregular_lines":7,
+# Server reflection is registered, so grpcurl needs no .proto on hand.
+grpcurl -plaintext localhost:8080 list
+# robotstxt.svc.v1.RobotsService, grpc.health.v1.Health, ...
+
+grpcurl -plaintext -d '{"domain":"www.nytimes.com","agent":"MyBot"}' \
+  localhost:8080 robotstxt.svc.v1.RobotsService/Parse
+# {"outcome":"FETCH_OUTCOME_SUCCESS","tier":"recovered","irregularLines":7,
 #  "sitemaps":["https://www.nytimes.com/sitemaps/new/news.xml.gz", ...25 of them]}
 
-curl -s localhost:8080/v1/robots:filter -H 'Content-Type: application/json' \
-  -d '{"robots_txt":"User-agent: *\nDisallow: /private\n","urls":["https://e.com/private/x"]}'
-# {"allowed":[],"disallowed":["https://e.com/private/x"]}
+grpcurl -plaintext -d '{"robots_txt":"User-agent: *\nDisallow: /private\n","urls":["https://e.com/private/x"]}' \
+  localhost:8080 robotstxt.svc.v1.RobotsService/Filter
+# {"disallowed":["https://e.com/private/x"]}
 ```
 
-`:parse` returns the sitemaps, the applicable `Crawl-delay`, and — when there are
-no rules to apply — the RFC 9309 §2.3.1 verdict. `:filter` applies a robots.txt
-to a list of URLs, which is what turns "URLs a sitemap lists" into "URLs this
-agent may fetch".
+Against the deployed service, swap plaintext for TLS and an ID token:
+
+```sh
+grpcurl -H "authorization: Bearer $(gcloud auth print-identity-token)" \
+  -d '{"domain":"example.com"}' \
+  robotstxt-svc-1041587693629.us-central1.run.app:443 \
+  robotstxt.svc.v1.RobotsService/Parse
+```
+
+`Parse` returns the sitemaps, the applicable `Crawl-delay`, and — when there are
+no rules to apply — the RFC 9309 §2.3.1 verdict. `Filter` applies a robots.txt to
+a list of URLs, which is what turns "URLs a sitemap lists" into "URLs this agent
+may fetch". `grpc.health.v1.Health` answers health checks.
 
 **The fetch follows §2.3.1, which is not intuitive**: `4xx` other than 429 means
 *allow everything* (Google explicitly warns against using 401/403 to mean
@@ -75,23 +89,24 @@ lives with the parser rather than in a caller. Responses always come from the
 two-tier path, and report which tier answered — real robots.txt files fail the
 strict RFC grammar routinely.
 
-The image is Go-only and 24.8 MB. The vendored C++ parser is the
-differential-test oracle and stays in CI (root `Dockerfile`), not in a
-deployment.
+The service contract is [`proto/robotstxt_service.proto`](proto/robotstxt_service.proto),
+the one hand-written proto here; `./regen.sh` regenerates its Go bindings into
+`proto/pb/`. It is deliberately separate from `proto/rep.proto` and
+`proto/recover.proto`, which are derived from the grammar.
+
+The image is Go-only. The vendored C++ parser is the differential-test oracle and
+stays in CI (root `Dockerfile`), not in a deployment.
 
 `./deploy.sh` ships it to Cloud Run (project `speax-498608`, `us-central1`):
-scale-to-zero, IAM-authenticated, a runtime identity with no project roles —
-the service only makes outbound HTTP and needs nothing from GCP.
-
-```
-https://robotstxt-svc-1041587693629.us-central1.run.app
-```
+scale-to-zero, IAM-authenticated, **`--use-http2` (required for gRPC)**, and a
+runtime identity with no project roles — the service only makes outbound HTTP
+and needs nothing from GCP.
 
 Layout: `src-google/` vendored google/robotstxt (see VENDOR.md) · `grammar/rep.ebnf`
 RFC 9309 EBNF formalization · `src-gluon/` grammar-driven parser, events
 compiler, two-tier recovery, matcher + renderer (README there explains the
 pipeline) · `proto/rep.proto` + `proto/recover.proto` derived typed reps ·
-`cmd/gluon` CLI · `cmd/robotstxt-svc` HTTP service (`Dockerfile.svc`) ·
+`cmd/gluon` CLI · `cmd/robotstxt-svc` gRPC service (`Dockerfile.svc`, `deploy.sh`) ·
 `tools/` robots-dump + docs pullers ·
 `testdata/` strict + malformed corpora · `fuzz/`, `bench/`, `docker/`,
 `docs/` (RFC + Google-docs knowledgebase, TODO, progress logs).

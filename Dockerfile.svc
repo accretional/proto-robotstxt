@@ -11,6 +11,10 @@
 #
 # So this image is Go only. The grammar is embedded (grammar/embed.go), so the
 # runtime needs nothing from disk but the CA bundle distroless already carries.
+#
+# proto/ is copied for proto/pb — the generated gRPC bindings the service
+# imports. proto/rep.proto and proto/recover.proto come along, which is
+# harmless: they are data files, not compiled.
 
 ARG GO_VERSION=1.26
 
@@ -23,6 +27,7 @@ RUN go mod download
 
 COPY grammar/ grammar/
 COPY src-gluon/ src-gluon/
+COPY proto/ proto/
 COPY cmd/ cmd/
 
 # Gate the image on the service's own tests. src-gluon's full suite needs the

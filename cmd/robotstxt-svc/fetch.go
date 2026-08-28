@@ -29,6 +29,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	pb "github.com/accretional/proto-robotstxt/proto/pb"
 )
 
 // DefaultUserAgent identifies this service to origins.
@@ -47,7 +49,7 @@ const maxRedirects = 5
 var errTooManyRedirects = errors.New("robots.txt redirect chain exceeded 5 hops")
 
 type robotsFetch struct {
-	Outcome    FetchOutcome
+	Outcome    pb.FetchOutcome
 	StatusCode int
 	Body       []byte
 	Err        error
@@ -104,7 +106,7 @@ func originOf(domain string) (string, error) {
 func (f *fetcher) get(ctx context.Context, origin string) robotsFetch {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/robots.txt", nil)
 	if err != nil {
-		return robotsFetch{Outcome: OutcomeUnreachable, Err: err}
+		return robotsFetch{Outcome: pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE, Err: err}
 	}
 	req.Header.Set("User-Agent", f.userAgent)
 	req.Header.Set("Accept", "text/plain, */*;q=0.8")
@@ -114,9 +116,9 @@ func (f *fetcher) get(ctx context.Context, origin string) robotsFetch {
 		// A chain that ran out of hops is "no valid robots.txt" (allow all);
 		// anything else is a transport failure (disallow all).
 		if errors.Is(err, errTooManyRedirects) {
-			return robotsFetch{Outcome: OutcomeUnavailable, Err: err}
+			return robotsFetch{Outcome: pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE, Err: err}
 		}
-		return robotsFetch{Outcome: OutcomeUnreachable, Err: err}
+		return robotsFetch{Outcome: pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE, Err: err}
 	}
 	defer resp.Body.Close()
 
@@ -124,22 +126,22 @@ func (f *fetcher) get(ctx context.Context, origin string) robotsFetch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		body, err := io.ReadAll(io.LimitReader(resp.Body, maxRobotsBytes))
 		if err != nil {
-			return robotsFetch{Outcome: OutcomeUnreachable, StatusCode: resp.StatusCode, Err: err}
+			return robotsFetch{Outcome: pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE, StatusCode: resp.StatusCode, Err: err}
 		}
-		return robotsFetch{Outcome: OutcomeSuccess, StatusCode: resp.StatusCode, Body: body}
+		return robotsFetch{Outcome: pb.FetchOutcome_FETCH_OUTCOME_SUCCESS, StatusCode: resp.StatusCode, Body: body}
 
 	case resp.StatusCode == http.StatusTooManyRequests: // 429, grouped with 5xx
-		return robotsFetch{Outcome: OutcomeUnreachable, StatusCode: resp.StatusCode}
+		return robotsFetch{Outcome: pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE, StatusCode: resp.StatusCode}
 
 	case resp.StatusCode >= 400 && resp.StatusCode < 500:
-		return robotsFetch{Outcome: OutcomeUnavailable, StatusCode: resp.StatusCode}
+		return robotsFetch{Outcome: pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE, StatusCode: resp.StatusCode}
 
 	case resp.StatusCode >= 500:
-		return robotsFetch{Outcome: OutcomeUnreachable, StatusCode: resp.StatusCode}
+		return robotsFetch{Outcome: pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE, StatusCode: resp.StatusCode}
 
 	default:
 		// 1xx/3xx reaching here means the client stopped following without an
 		// error; no rules were obtained, so treat it as no valid robots.txt.
-		return robotsFetch{Outcome: OutcomeUnavailable, StatusCode: resp.StatusCode}
+		return robotsFetch{Outcome: pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE, StatusCode: resp.StatusCode}
 	}
 }

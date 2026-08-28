@@ -2,6 +2,44 @@
 
 Newest entries at top.
 
+## 2026-08-28 — converted from HTTP/JSON to gRPC
+
+`robotstxt.svc.v1.RobotsService` with `Parse` and `Filter`, plus server
+reflection and `grpc.health.v1.Health`.
+
+**The proto question this repo had been deferring.** Until now the service used
+plain Go structs precisely *because* `proto/` means "grammar-derived" here
+(rule 6) and a hand-written file there would be ambiguous. gRPC forces a real
+`.proto`, so the rule gained an explicit exception instead of a workaround:
+`proto/robotstxt_service.proto` is hand-written, carries a banner saying so, and
+is marked by the `_service` suffix. `gluon genproto` neither reads nor writes it;
+`./regen.sh` regenerates only `proto/*_service.proto` into `proto/pb/`, by
+explicit filename, so it can never touch rep.proto or recover.proto. Generated
+bindings are committed, so an ordinary build needs no protoc.
+
+**Two deployment details that would each have broken it silently:**
+
+- **`--use-http2` is required.** Without it Cloud Run terminates HTTP/2 at the
+  frontend and speaks HTTP/1.1 to the container, which a gRPC server cannot
+  answer — every RPC fails at the transport layer, with nothing in the
+  application logs.
+- **`proto/` had to be added to the image build.** `Dockerfile.svc` copied only
+  `grammar/`, `src-gluon/` and `cmd/`; the service now imports `proto/pb`.
+
+**Message size.** Both directions are set to 64 MiB rather than gRPC's 4 MiB
+default: a `Filter` request carrying 50,000 URLs is several MiB, and the failure
+mode would be an opaque ResourceExhausted at the transport layer rather than
+anything the caller could act on.
+
+**Health checks now have a real answer.** The standard health service replaces
+`GET /healthz`, which sidesteps the environmental oddity noted below — that path
+never reached the container anyway.
+
+run.sh step 6 now drives the service with grpcurl (installing it via `go install`
+if absent) and additionally asserts that reflection advertises the service, since
+that is how an operator reaches it without a .proto. `TestGRPCSurface` covers the
+same ground in-process over a real socket.
+
 ## 2026-08-27 — deployed to Cloud Run; renamed robots-svc -> robotstxt-svc
 
 `./deploy.sh` mirrors webrisk-svc's conventions (same project `speax-498608`,

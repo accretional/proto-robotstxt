@@ -1,11 +1,12 @@
-// Command robotstxt-svc serves proto-robotstxt over HTTP/JSON: it fetches a
-// domain's robots.txt, parses it with the grammar-driven parser, and answers the
-// two questions a crawler asks of it — what may I fetch, and where are the
-// sitemaps.
+// Command robotstxt-svc serves proto-robotstxt over gRPC: it fetches a domain's
+// robots.txt, parses it with the grammar-driven parser, and answers the two
+// questions a crawler asks of it — what may I fetch, and where are the sitemaps.
 //
-//	POST /v1/robots:parse    {"domain":"example.com"} -> sitemaps, crawl delay, verdict
-//	POST /v1/robots:filter   {"robots_txt":..., "urls":[...]} -> allowed / disallowed
-//	GET  /healthz
+//	robotstxt.svc.v1.RobotsService/Parse
+//	robotstxt.svc.v1.RobotsService/Filter
+//
+// Server reflection is registered, so grpcurl needs no .proto to call it, and
+// the standard grpc.health.v1.Health service answers health checks.
 //
 // The service ships the Go parser only. The vendored C++ parser is the
 // differential-test oracle (run.sh, `gluon check`) and has no place in a
@@ -19,16 +20,29 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"flag"
 	"log"
-	"net/http"
+	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
+
+	pb "github.com/accretional/proto-robotstxt/proto/pb"
 	robots "github.com/accretional/proto-robotstxt/src-gluon"
 )
+
+// maxMessageBytes is generous because Filter carries a URL list: a 50,000-URL
+// request is a few MiB, well past gRPC's 4 MiB default, and the failure mode
+// would be an opaque ResourceExhausted at the transport layer.
+const maxMessageBytes = 64 << 20
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address (PORT overrides the port)")
@@ -47,66 +61,81 @@ func main() {
 		log.Fatalf("robotstxt-svc: load grammar: %v", err)
 	}
 
-	s := &server{grammar: g, fetch: newFetcher(*userAgent, *fetchTimeout)}
+	lis, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Fatalf("robotstxt-svc: listen: %v", err)
+	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/robots:parse", s.parse)
-	mux.HandleFunc("POST /v1/robots:filter", s.filter)
-	mux.HandleFunc("GET /healthz", s.healthz)
+	srv := grpc.NewServer(
+		grpc.MaxRecvMsgSize(maxMessageBytes),
+		grpc.MaxSendMsgSize(maxMessageBytes),
+	)
+	pb.RegisterRobotsServiceServer(srv, &server{
+		grammar: g,
+		fetch:   newFetcher(*userAgent, *fetchTimeout),
+	})
 
-	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	log.Printf("robotstxt-svc: listening on %s", *addr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	// Health: the standard service, so Cloud Run and grpcurl both have a
+	// well-known probe that is not an application endpoint.
+	hs := health.NewServer()
+	hs.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(srv, hs)
+
+	// Reflection: grpcurl can then call this service with no .proto on hand.
+	reflection.Register(srv)
+
+	// Drain in-flight RPCs on SIGTERM — Cloud Run sends one before shutdown.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-stop
+		log.Printf("robotstxt-svc: shutting down")
+		hs.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+		srv.GracefulStop()
+	}()
+
+	log.Printf("robotstxt-svc: serving gRPC on %s", *addr)
+	if err := srv.Serve(lis); err != nil {
 		log.Fatalf("robotstxt-svc: %v", err)
 	}
 }
 
 type server struct {
+	pb.UnimplementedRobotsServiceServer
 	grammar *robots.Grammar
 	fetch   *fetcher
 }
 
-func (s *server) parse(w http.ResponseWriter, r *http.Request) {
-	var req ParseRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
-		return
-	}
-	origin, err := originOf(req.Domain)
+func (s *server) Parse(ctx context.Context, req *pb.ParseRequest) (*pb.ParseResponse, error) {
+	origin, err := originOf(req.GetDomain())
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	agent := req.Agent
+	agent := req.GetAgent()
 	if agent == "" {
 		agent = "*"
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), s.fetch.client.Timeout+5*time.Second)
-	defer cancel()
-
 	res := s.fetch.get(ctx, origin)
-	resp := ParseResponse{
+	resp := &pb.ParseResponse{
 		Origin:     origin,
-		RobotsURL:  origin + "/robots.txt",
+		RobotsUrl:  origin + "/robots.txt",
 		Outcome:    res.Outcome,
-		StatusCode: res.StatusCode,
-		Sitemaps:   []string{},
+		StatusCode: int32(res.StatusCode),
 	}
 	if res.Err != nil {
 		resp.FetchError = res.Err.Error()
 	}
 
 	switch res.Outcome {
-	case OutcomeUnavailable:
+	case pb.FetchOutcome_FETCH_OUTCOME_UNAVAILABLE:
 		resp.AllowAll = true
-	case OutcomeUnreachable:
+	case pb.FetchOutcome_FETCH_OUTCOME_UNREACHABLE:
 		resp.DisallowAll = true
-	case OutcomeSuccess:
+	case pb.FetchOutcome_FETCH_OUTCOME_SUCCESS:
 		rec, err := s.grammar.Recover(res.Body)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "parse robots.txt: "+err.Error())
-			return
+			return nil, status.Errorf(codes.Internal, "parse robots.txt: %v", err)
 		}
 		resp.Tier = "recovered"
 		if rec.Strict != nil {
@@ -119,46 +148,39 @@ func (s *server) parse(w http.ResponseWriter, r *http.Request) {
 		}
 		resp.Sitemaps = sitemapsOf(rec.Events, origin)
 		resp.CrawlDelaySeconds = crawlDelayOf(rec.Events, agent)
-		if req.IncludeText {
+		if req.GetIncludeText() {
 			resp.RobotsTxt = string(res.Body)
 		}
 	}
 
-	log.Printf("parse: %s outcome=%s status=%d tier=%s sitemaps=%d delay=%.3g",
+	log.Printf("Parse: %s outcome=%s status=%d tier=%s sitemaps=%d delay=%.3g",
 		origin, resp.Outcome, resp.StatusCode, resp.Tier, len(resp.Sitemaps), resp.CrawlDelaySeconds)
-	writeJSON(w, http.StatusOK, resp)
+	return resp, nil
 }
 
-func (s *server) filter(w http.ResponseWriter, r *http.Request) {
-	var req FilterRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<20)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
-		return
+func (s *server) Filter(ctx context.Context, req *pb.FilterRequest) (*pb.FilterResponse, error) {
+	if req.GetAllowAll() && req.GetDisallowAll() {
+		return nil, status.Error(codes.InvalidArgument, "allow_all and disallow_all are mutually exclusive")
 	}
-	if req.AllowAll && req.DisallowAll {
-		writeError(w, http.StatusBadRequest, "allow_all and disallow_all are mutually exclusive")
-		return
-	}
-	agent := req.Agent
+	agent := req.GetAgent()
 	if agent == "" {
 		agent = "*"
 	}
 
-	resp := FilterResponse{Allowed: []string{}, Disallowed: []string{}}
+	resp := &pb.FilterResponse{Allowed: []string{}, Disallowed: []string{}}
 
 	switch {
-	case req.DisallowAll:
-		resp.Disallowed = append(resp.Disallowed, req.URLs...)
-	case req.AllowAll:
-		resp.Allowed = append(resp.Allowed, req.URLs...)
+	case req.GetDisallowAll():
+		resp.Disallowed = append(resp.Disallowed, req.GetUrls()...)
+	case req.GetAllowAll():
+		resp.Allowed = append(resp.Allowed, req.GetUrls()...)
 	default:
-		rec, err := s.grammar.Recover([]byte(req.RobotsTxt))
+		rec, err := s.grammar.Recover([]byte(req.GetRobotsTxt()))
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "parse robots.txt: "+err.Error())
-			return
+			return nil, status.Errorf(codes.Internal, "parse robots.txt: %v", err)
 		}
 		agents := []string{agent}
-		for _, u := range req.URLs {
+		for _, u := range req.GetUrls() {
 			if robots.AllowedByEvents(rec.Events, agents, u) {
 				resp.Allowed = append(resp.Allowed, u)
 			} else {
@@ -167,23 +189,7 @@ func (s *server) filter(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("filter: agent=%s urls=%d allowed=%d disallowed=%d",
-		agent, len(req.URLs), len(resp.Allowed), len(resp.Disallowed))
-	writeJSON(w, http.StatusOK, resp)
-}
-
-func (s *server) healthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("write response: %v", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]string{"error": msg})
+	log.Printf("Filter: agent=%s urls=%d allowed=%d disallowed=%d",
+		agent, len(req.GetUrls()), len(resp.Allowed), len(resp.Disallowed))
+	return resp, nil
 }
